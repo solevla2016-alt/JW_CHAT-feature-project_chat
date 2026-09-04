@@ -20,6 +20,10 @@ django-filter = "^24.3"
 pillow = "^10.4"
 python-dotenv = "^1.0"
 gunicorn = "^22.0"
+httpx = "^0.28"
+SpeechRecognition = "^3.10"
+pydub = "^0.25"
+imageio-ffmpeg = "^0.6"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.5"

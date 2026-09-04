@@ -19,6 +19,7 @@ db.sqlite3
 /frontend/tsconfig.tsbuildinfo
 /frontend/logs/
 /frontend/dev.log
+/frontend/dev.log.err
 
 # IDE
 .idea/

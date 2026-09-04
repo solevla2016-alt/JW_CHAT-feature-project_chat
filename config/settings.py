@@ -58,14 +58,34 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
+import os
+from urllib.parse import urlparse
+
+# --- PostgreSQL через DATABASE_URL (Railway/Render) либо отдельные поля ---
+_database_url = os.getenv("DATABASE_URL")
+if _database_url:
+    _db = urlparse(_database_url)
+    _DB_CONFIG = {
+        "NAME": _db.path[1:],
+        "USER": _db.username,
+        "PASSWORD": _db.password,
+        "HOST": _db.hostname,
+        "PORT": _db.port or 5432,
+        "OPTIONS": {"sslmode": "require"},
+    }
+else:
+    _DB_CONFIG = {
         "NAME": os.getenv("DATABASE_NAME", "jwchat"),
         "USER": os.getenv("DATABASE_USER", "jwchat"),
         "PASSWORD": os.getenv("DATABASE_PASSWORD", "jwchat_secret"),
         "HOST": os.getenv("DATABASE_HOST", "localhost"),
         "PORT": os.getenv("DATABASE_PORT", "5432"),
+    }
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        **_DB_CONFIG,
     }
 }
 
@@ -90,16 +110,23 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "users.User"
 
+# Redis через REDIS_URL (Railway/Render) либо отдельные поля
+_redis_url = os.getenv("REDIS_URL")
+if _redis_url:
+    _REDIS_HOSTS = [_redis_url]
+else:
+    _REDIS_HOSTS = [
+        (
+            os.getenv("REDIS_HOST", "127.0.0.1"),
+            int(os.getenv("REDIS_PORT", "6379")),
+        )
+    ]
+
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [
-                (
-                    os.getenv("REDIS_HOST", "127.0.0.1"),
-                    int(os.getenv("REDIS_PORT", "6379")),
-                )
-            ],
+            "hosts": _REDIS_HOSTS,
         },
     },
 }
@@ -110,6 +137,15 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 ).split(",")
 
 CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = os.getenv(
+    "CSRF_TRUSTED_ORIGINS",
+    "http://localhost:3000",
+).split(",")
+
+# Trust proxy headers (Railway/Render) for HTTPS
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # --- AI Assistant (OpenRouter — бесплатный) ---
 AI_ASSISTANT_USERNAME = os.getenv("AI_ASSISTANT_USERNAME", "AI Assistant")

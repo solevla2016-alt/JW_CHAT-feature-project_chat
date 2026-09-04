@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Menu } from "lucide-react";
 import { useChatStore } from "@/lib/store";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { API_URL } from "@/lib/api";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { TypingIndicator } from "./TypingIndicator";
@@ -38,8 +39,7 @@ export function ChatWindow() {
     setSearchLoading(true);
     try {
       const res = await fetch(
-        `http://localhost:8000/api/chat/rooms/${activeRoom.id}/search/?q=${encodeURIComponent(searchQuery)}`,
-        { credentials: "include" }
+        `${API_URL}/chat/rooms/${activeRoom.id}/search/?q=${encodeURIComponent(searchQuery)}`,        { credentials: "include" }
       );
       if (res.ok) {
         const data = await res.json();

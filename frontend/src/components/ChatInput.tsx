@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CornerUpLeft, Mic, Paperclip, Pencil, SendHorizonal, Smile, Square, Video, X } from "lucide-react";
-import { uploadFile, mediaUrl } from "@/lib/api";
+import { uploadFile, mediaUrl, API_URL } from "@/lib/api";
 
 const EMOJI_LIST = [
   "😀", "😂", "🤣", "😊", "😍", "😘", "😉", "😎",
@@ -173,7 +173,7 @@ export function ChatInput({
       const formData = new FormData();
       formData.append("file", pending.blob, pending.name);
       try {
-        const res = await fetch(`http://localhost:8000/api/chat/rooms/${roomId}/upload/`, {
+        const res = await fetch(`${API_URL}/chat/rooms/${roomId}/upload/`, {
           method: "POST",
           credentials: "include",
           body: formData,

@@ -1,6 +1,12 @@
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+
+export const WS_URL =
+  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/chat";
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
@@ -44,7 +50,8 @@ export async function uploadFile<T>(
   return res.json();
 }
 
-const MEDIA_BASE = "http://localhost:8000";
+const apiOrigin = new URL(API_URL).origin;
+const MEDIA_BASE = apiOrigin;
 
 export function mediaUrl(path: string): string {
   if (!path) return "";

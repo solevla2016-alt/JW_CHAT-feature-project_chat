@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useChatStore } from "./store";
+import { WS_URL } from "./api";
 import type { Message, WebSocketMessage } from "./types";
 
-const WS_BASE = typeof window !== "undefined"
-  ? `ws://${window.location.hostname}:8000/ws/chat`
-  : "";
+const WS_BASE = WS_URL;
 
 export function useWebSocket(roomName: string | null) {
   const wsRef = useRef<WebSocket | null>(null);

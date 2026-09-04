@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { CheckCheck, CornerUpLeft, Download, FileIcon, Loader2, Pencil, Pin, SmilePlus, Volume2 } from "lucide-react";
 import type { Message, ReactionItem } from "@/lib/types";
 import { cn, formatTime } from "@/lib/utils";
-import { mediaUrl } from "@/lib/api";
+import { mediaUrl, API_URL } from "@/lib/api";
 import { useChatStore } from "@/lib/store";
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
@@ -42,7 +42,7 @@ export function MessageBubble({
     setTranscribing(true);
     try {
       const res = await fetch(
-        `http://localhost:8000/api/chat/rooms/${activeRoom.id}/transcribe/`,
+        `${API_URL}/chat/rooms/${activeRoom.id}/transcribe/`,
         {
           method: "POST",
           credentials: "include",
