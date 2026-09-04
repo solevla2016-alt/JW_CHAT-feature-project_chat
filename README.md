@@ -1,38 +1,54 @@
 # 🚀 JOIN WORK! — Modern Real-Time Chat
 
-Современный реально-временный мессенджер уровня Telegram/Slack для команды **JOIN WORK!**.
+Современный real-time мессенджер уровня Telegram/Slack для команды **JOIN WORK!**.
+WebSocket-общение, медиа, голосовые с транскрипцией, AI-ассистент — всё в одном.
 
 ## ✨ Возможности
 
-- **Real-time обмен сообщениями** через WebSocket (Django Channels + Redis)
-- **Ответы на сообщения** (Replies) с отображением цитаты
-- **Редактирование сообщений** с флагом "изменено"
-- **Индикатор набора текста** ("печатает...") с debounce 3 сек
-- **Онлайн-статус** участников
-- **Оптимистичный UI** — мгновенная отправка
-- **Тёмная и светлая тема** (авто + ручное переключение)
-- **Glassmorphism** эффекты, плавные анимации (Framer Motion)
-- **Мобильная адаптивность** (Mobile First)
-- **История сообщений** (последние 50-100)
+**Общение**
+- Real-time сообщения через WebSocket (Django Channels + Redis)
+- Комнаты (публичные и приватные), создание/вступление/выход
+- Ответы на сообщения (цитаты) и редактирование с флагом «изменено»
+- Индикатор «печатает...» и онлайн-статус участников
+- Счётчик непрочитанных сообщений в сайдбаре
+
+**Медиа**
+- Вложения: изображения, видео, файлы
+- Запись голосовых сообщений прямо в чате (MediaRecorder)
+- **Автотранскрипция голосовых в текст** (Google Web Speech API)
+
+**Умные функции**
+- **AI-ассистент** для разработки — `/ai ваш вопрос` (локальный бот или облачный Qwen)
+- Поиск по сообщениям в комнате
+- Закрепление важных сообщений
+- Реакции-эмодзи на сообщениях (👍 ❤️ 😂 🔥)
+
+**Интерфейс**
+- Тёмная и светлая темы (авто + ручное переключение)
+- Glassmorphism, плавные анимации (Framer Motion)
+- Мобильная адаптивность (Mobile First)
 
 ## 🏗 Архитектура
 
 ```
 ├── config/                 # Django 5.1 + Channels + Daphne
 │   ├── asgi.py             # ASGI с WebSocket роутингом
-│   ├── settings.py         # PostgreSQL, Redis, CORS
+│   ├── settings.py         # PostgreSQL, Redis, CORS, AI
 │   └── urls.py             # REST API маршруты
 ├── users/                  # Кастомная модель User + Auth API
 ├── chat/                   # Core-приложение чата
-│   ├── models.py           # ChatRoom, Message (reply_to, is_edited)
+│   ├── models.py           # ChatRoom, Message, Reaction, ReadStatus
 │   ├── consumers.py        # WebSocket consumer (Redis channel layer)
 │   ├── serializers.py      # DRF сериализаторы
-│   └── api_views.py        # REST эндпоинты
+│   ├── api_views.py        # REST эндпоинты (upload, search, transcribe)
+│   ├── ai_service.py       # AI-ассистент (OpenRouter + fallback)
+│   ├── ai_local.py         # Локальный AI-бот (без ключа)
+│   └── speech_service.py   # Транскрипция голосовых
 │
 └── frontend/               # Next.js 14 + TypeScript + Tailwind
     └── src/
         ├── app/            # App Router страницы
-        ├── components/     # MessageBubble, ChatInput, Sidebar...
+        ├── components/     # MessageBubble, ChatInput, Sidebar, ChatWindow...
         └── lib/            # Zustand store, WebSocket hook, API
 ```
 
@@ -42,6 +58,8 @@
 - Python 3.11+, Django 5.1, Django Channels 4.1, Daphne
 - PostgreSQL 15, Redis 7 (Channel Layer)
 - DRF, django-cors-headers, Poetry, Ruff, Pytest
+- SpeechRecognition + pydub + imageio-ffmpeg (транскрипция)
+- httpx + OpenRouter (AI)
 
 **Frontend**
 - Next.js 14 (App Router), TypeScript (strict)
@@ -49,7 +67,7 @@
 
 ## 🚀 Быстрый старт
 
-### 1. Запуск инфраструктуры (PostgreSQL + Redis)
+### 1. Инфраструктура (PostgreSQL + Redis)
 
 ```bash
 docker compose up -d
@@ -67,6 +85,8 @@ python manage.py createsuperuser
 
 # Запуск ASGI-сервера с поддержкой WebSocket
 daphne -b 0.0.0.0 -p 8000 config.asgi:application
+# или
+python manage.py runserver 8000
 ```
 
 ### 3. Frontend
@@ -74,10 +94,28 @@ daphne -b 0.0.0.0 -p 8000 config.asgi:application
 ```bash
 cd frontend
 npm install
+
+# Windows: добавляем node в PATH
+$env:Path = "C:\Users\<имя>\Documents\DEVTOOLS\nodejs-v20;" + $env:Path
 npm run dev
 ```
 
 Откройте **http://localhost:3000** в двух браузерах/вкладках и общайтесь!
+
+### 4. AI-ассистент
+
+Без ключа работает локальный бот. Для облачного Qwen задайте в `.env`:
+```bash
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+## 🤖 Как использовать AI
+
+В поле ввода чата напишите:
+```
+/ai как создать модель в Django?
+```
+AI ответит прямо в чате зелёным пузырём.
 
 ## 🧭 API
 
@@ -87,11 +125,19 @@ npm run dev
 | POST | `/api/auth/login/` | Вход |
 | POST | `/api/auth/logout/` | Выход |
 | GET | `/api/auth/me/` | Текущий пользователь |
-| GET | `/api/chat/rooms/` | Список комнат |
+| GET | `/api/chat/rooms/` | Список комнат (с непрочитанными) |
 | POST | `/api/chat/rooms/create/` | Создать комнату |
 | GET | `/api/chat/rooms/{id}/messages/` | История сообщений |
+| GET | `/api/chat/rooms/{id}/search/?q=` | Поиск по сообщениям |
+| POST | `/api/chat/rooms/{id}/upload/` | Загрузка вложения |
+| POST | `/api/chat/rooms/{id}/transcribe/` | Транскрипция голосового |
 
 **WebSocket:** `ws://localhost:8000/ws/chat/{room_name}/`
+
+## 🚢 Деплой
+
+Проект готов к деплою: `vercel.json` (фронтенд), `render.yaml` (бэкенд-блупринт),
+поддержка `DATABASE_URL`/`REDIS_URL`. Пошаговая инструкция — в **`DEPLOY.md`**.
 
 ---
 
