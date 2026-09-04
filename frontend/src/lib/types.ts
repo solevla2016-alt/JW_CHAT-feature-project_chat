@@ -1,0 +1,86 @@
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  avatar: string | null;
+  status: string;
+}
+
+export interface ReplyTo {
+  id: number;
+  username: string;
+  text: string;
+}
+
+export interface ReactionItem {
+  emoji: string;
+  username: string;
+}
+
+export interface Message {
+  id: number;
+  username: string;
+  avatar: string | null;
+  message: string;
+  created_at: string;
+  is_edited: boolean;
+  reply_to: ReplyTo | null;
+  reactions: ReactionItem[];
+  attachment_type: "none" | "image" | "audio" | "video" | "file";
+  attachment_url: string | null;
+  attachment_name: string;
+  duration: number | null;
+  is_ai?: boolean;
+  pinned?: boolean;
+  transcription?: string;
+}
+
+export interface ChatRoom {
+  id: number;
+  name: string;
+  description: string;
+  avatar: string | null;
+  is_private: boolean;
+  owner: string;
+  member_count: number;
+  unread_count?: number;
+  last_message: {
+    text: string;
+    username: string;
+    created_at: string;
+  } | null;
+  created_at: string;
+}
+
+export interface TypingUser {
+  username: string;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+export interface WebSocketMessage {
+  type: string;
+  id?: number;
+  username?: string;
+  avatar?: string | null;
+  message?: string;
+  created_at?: string;
+  is_edited?: boolean;
+  reply_to?: ReplyTo | null;
+  reactions?: ReactionItem[];
+  attachment_type?: "none" | "image" | "audio" | "video" | "file";
+  attachment_url?: string | null;
+  attachment_name?: string;
+  duration?: number | null;
+  is_ai?: boolean;
+  is_own?: boolean;
+  is_typing?: boolean;
+  ai_typing?: boolean;
+  pinned?: boolean;
+  pinned_by?: string;
+  transcription?: string;
+  action?: string;
+  users?: string[];
+  messages?: Message[];
+  error?: string;
+  updated_at?: string;
+}
