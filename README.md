@@ -3,6 +3,18 @@
 Современный real-time мессенджер уровня Telegram/Slack для команды **JOIN WORK!**.
 WebSocket-общение, медиа, голосовые с транскрипцией, AI-ассистент — всё в одном.
 
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)
+![Django](https://img.shields.io/badge/Django-5.1-092E20?style=flat&logo=django&logoColor=white)
+![Channels](https://img.shields.io/badge/Django%20Channels-4.1-094b70?style=flat&logo=django&logoColor=white)
+![Daphne](https://img.shields.io/badge/Daphne-ASGI-6fbbd3?style=flat)
+![Next.js](https://img.shields.io/badge/Next.js-14-000000?style=flat&logo=next.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat&logo=typescript&logoColor=white)
+![Tailwind](https://img.shields.io/badge/Tailwind-3-06B6D4?style=flat&logo=tailwindcss&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat&logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-7-FF4438?style=flat&logo=redis&logoColor=white)
+![Zustand](https://img.shields.io/badge/Zustand-store-78350f?style=flat)
+![License](https://img.shields.io/badge/License-MIT-green?style=flat)
+
 ## ✨ Возможности
 
 **Общение**
