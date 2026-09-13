@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { DevRedirect } from "@/components/DevRedirect";
 
 export const metadata: Metadata = {
   title: "JOIN WORK! — Мессенджер",
@@ -13,7 +14,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" suppressHydrationWarning>
-      <body className="h-screen overflow-hidden">
+      <body className="chat-app h-screen overflow-hidden">
+        <DevRedirect />
         {children}
       </body>
     </html>

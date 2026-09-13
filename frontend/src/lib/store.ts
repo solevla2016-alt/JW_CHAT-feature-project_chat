@@ -1,11 +1,13 @@
 "use client";
 
 import { create } from "zustand";
-import type { ChatRoom, Message, ReactionItem, User, TypingUser } from "./types";
+import type { ChatRoom, Message, ReactionItem, Server, User, TypingUser } from "./types";
 
 interface ChatState {
   user: User | null;
   rooms: ChatRoom[];
+  servers: Server[];
+  activeServer: Server | null;
   activeRoom: ChatRoom | null;
   messages: Message[];
   onlineUsers: string[];
@@ -15,6 +17,8 @@ interface ChatState {
 
   setUser: (user: User | null) => void;
   setRooms: (rooms: ChatRoom[]) => void;
+  setServers: (servers: Server[]) => void;
+  setActiveServer: (server: Server | null) => void;
   setActiveRoom: (room: ChatRoom | null) => void;
   setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
@@ -35,6 +39,8 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set) => ({
   user: null,
   rooms: [],
+  servers: [],
+  activeServer: null,
   activeRoom: null,
   messages: [],
   onlineUsers: [],
@@ -44,11 +50,15 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setUser: (user) => set({ user }),
   setRooms: (rooms) => set({ rooms }),
+  setServers: (servers) => set({ servers }),
+  setActiveServer: (server) => set({ activeServer: server, activeRoom: null, messages: [] }),
   setActiveRoom: (room) => set({ activeRoom: room, messages: [], typingUsers: [] }),
   setMessages: (messages) => set({ messages }),
   addMessage: (message) =>
     set((state) => ({
-      messages: [...state.messages, message],
+      messages: state.messages.some((m) => m.id === message.id)
+        ? state.messages
+        : [...state.messages, message],
     })),
   updateMessage: (id, text, updatedAt) =>
     set((state) => ({

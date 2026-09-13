@@ -10,9 +10,17 @@ from .api_views import (
     room_transcribe_view,
     room_upload_view,
     rooms_list_view,
+    server_create_view,
+    server_invite_view,
+    server_join_view,
+    servers_list_view,
 )
 
 urlpatterns = [
+    path("servers/", servers_list_view, name="api_servers"),
+    path("servers/create/", server_create_view, name="api_server_create"),
+    path("servers/<int:server_id>/invite/", server_invite_view, name="api_server_invite"),
+    path("servers/join/<str:token>/", server_join_view, name="api_server_join"),
     path("rooms/", rooms_list_view, name="api_rooms"),
     path("rooms/create/", room_create_view, name="api_room_create"),
     path("rooms/<int:room_id>/messages/", room_messages_view, name="api_room_messages"),

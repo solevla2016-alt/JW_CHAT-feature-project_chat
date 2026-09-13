@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Menu } from "lucide-react";
+import { Menu, Users, X } from "lucide-react";
 import { useChatStore } from "@/lib/store";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { API_URL } from "@/lib/api";
@@ -9,6 +9,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { TypingIndicator } from "./TypingIndicator";
 import { EmptyState } from "./EmptyState";
+import { MembersPanel } from "./MembersPanel";
 
 export function ChatWindow() {
   const { activeRoom, messages, setSidebarOpen } = useChatStore();
@@ -20,6 +21,9 @@ export function ChatWindow() {
   const typingUsers = useChatStore((s) => s.typingUsers);
   const aiTyping = useChatStore((s) => s.aiTyping);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState<boolean>(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 1280 : false
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Array<{ id: number; username: string; message: string; created_at: string }>>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -73,13 +77,17 @@ export function ChatWindow() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <ChatHeader
-        roomName={activeRoom.name}
-        onOpenSidebar={() => setSidebarOpen(true)}
-        onToggleSearch={() => setSearchOpen((v) => !v)}
-        searchOpen={searchOpen}
-      />
+    <div className="flex h-full min-w-0 flex-1">
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+        <ChatHeader
+          roomName={activeRoom.name}
+          roomType={activeRoom.room_type}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onToggleSearch={() => setSearchOpen((v) => !v)}
+          searchOpen={searchOpen}
+          onToggleMembers={() => setMembersOpen((v) => !v)}
+          membersOpen={membersOpen}
+        />
 
       {searchOpen && (
         <div className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 md:px-6">
@@ -179,24 +187,51 @@ export function ChatWindow() {
           setEditingTarget(null);
         }}
       />
-    </div>
+        </div>
+
+        {membersOpen && (
+          <div className="hidden md:block">
+            <MembersPanel onClose={() => setMembersOpen(false)} />
+          </div>
+        )}
+        {membersOpen && (
+          <div className="fixed inset-0 z-40 flex justify-end md:hidden">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setMembersOpen(false)} />
+            <div className="relative z-10">
+              <MembersPanel onClose={() => setMembersOpen(false)} />
+            </div>
+          </div>
+        )}
+      </div>
   );
 }
 
 export function ChatHeader({
   roomName,
+  roomType,
   onOpenSidebar,
   onToggleSearch,
   searchOpen,
+  onToggleMembers,
+  membersOpen,
 }: {
   roomName: string;
+  roomType?: "group" | "channel" | "direct";
   onOpenSidebar: () => void;
   onToggleSearch: () => void;
   searchOpen: boolean;
+  onToggleMembers: () => void;
+  membersOpen: boolean;
 }) {
   const onlineUsers = useChatStore((s) => s.onlineUsers);
+  const typeLabel =
+    roomType === "direct"
+      ? "Личный чат"
+      : roomType === "channel"
+        ? "Канал"
+        : "Группа";
   return (
-    <div className="flex items-center justify-between border-b border-[var(--border-color)] px-4 py-3 md:px-6">
+    <div className="flex items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)]/80 px-4 py-3 backdrop-blur-md md:px-6">
       <div className="flex items-center gap-3">
         <button
           onClick={onOpenSidebar}
@@ -207,14 +242,28 @@ export function ChatHeader({
         </button>
         <div>
           <h2 className="text-base font-semibold">
-            <span className="text-brand-600 dark:text-brand-400">#</span> {roomName}
+            <span className="text-brand-600 dark:text-brand-400">
+              {roomType === "channel" ? "#" : roomType === "direct" ? "@" : "#"}
+            </span>{" "}
+            {roomName}
           </h2>
           <p className="text-xs text-[var(--text-secondary)]">
-            {onlineUsers.length} в сети
+            {onlineUsers.length} в сети · {typeLabel}
           </p>
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <button
+          onClick={onToggleMembers}
+          className={`rounded-lg p-2 transition-colors ${
+            membersOpen
+              ? "bg-[var(--brand-primary)] text-white"
+              : "text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
+          }`}
+          title="Участники"
+        >
+          <Users size={18} />
+        </button>
         <button
           onClick={onToggleSearch}
           className={`rounded-lg p-2 transition-colors ${

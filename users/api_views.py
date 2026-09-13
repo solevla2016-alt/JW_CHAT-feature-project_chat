@@ -23,6 +23,7 @@ def register_view(request: Request) -> Response:
     email = request.data.get("email", "").strip()
     password = request.data.get("password", "")
     password2 = request.data.get("password2", "")
+    birth_date = request.data.get("birth_date") or None
 
     if not username or not password:
         return Response({"error": "Username и пароль обязательны"}, status=status.HTTP_400_BAD_REQUEST)
@@ -37,6 +38,13 @@ def register_view(request: Request) -> Response:
         return Response({"error": "Пользователь уже существует"}, status=status.HTTP_400_BAD_REQUEST)
 
     user = User.objects.create_user(username=username, email=email, password=password)
+    if birth_date:
+        try:
+            from datetime import date
+            user.birth_date = date.fromisoformat(birth_date)
+            user.save(update_fields=["birth_date"])
+        except ValueError:
+            return Response({"error": "Некорректная дата рождения"}, status=status.HTTP_400_BAD_REQUEST)
     login(request, user)
     return Response(_user_data(user), status=status.HTTP_201_CREATED)
 
@@ -49,6 +57,13 @@ def login_view(request: Request) -> Response:
     username = request.data.get("username", "").strip()
     password = request.data.get("password", "")
     user = authenticate(request, username=username, password=password)
+    if user is None:
+        user = _authenticate_case_insensitive(request, username, password)
+    if user is None and "@" in username:
+        for email_user in User.objects.filter(email__iexact=username):
+            user = authenticate(request, username=email_user.username, password=password)
+            if user is not None:
+                break
     if user is None:
         return Response({"error": "Неверный логин или пароль"}, status=status.HTTP_400_BAD_REQUEST)
     login(request, user)
@@ -76,6 +91,66 @@ def users_list_view(request: Request) -> Response:
     return Response(list(users))
 
 
+@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([CsrfExemptSessionAuthentication])
+def profile_update_view(request: Request) -> Response:
+    user = request.user
+    data = request.data
+
+    status_text = data.get("status")
+    if status_text is not None:
+        user.status = str(status_text)[:200]
+
+    birth_date = data.get("birth_date")
+    if birth_date:
+        try:
+            from datetime import date
+            user.birth_date = date.fromisoformat(str(birth_date))
+        except ValueError:
+            return Response({"error": "Некорректная дата рождения"}, status=status.HTTP_400_BAD_REQUEST)
+    elif birth_date == "":
+        user.birth_date = None
+
+    privacy = data.get("message_privacy")
+    if privacy and privacy in dict(User.MessagePrivacy.choices):
+        user.message_privacy = privacy
+
+    user.save()
+    return Response(_user_data(user))
+
+
+@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([CsrfExemptSessionAuthentication])
+def avatar_upload_view(request: Request) -> Response:
+    user = request.user
+    avatar = request.FILES.get("avatar")
+    if not avatar:
+        return Response({"error": "Файл не передан"}, status=status.HTTP_400_BAD_REQUEST)
+
+    ext = avatar.name.lower().rsplit(".", 1)[-1] if "." in avatar.name else ""
+    allowed = {"jpg", "jpeg", "png", "gif", "webp"}
+    if ext not in allowed:
+        return Response({"error": "Формат файла не поддерживается"}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.avatar = avatar
+    user.save()
+    return Response(_user_data(user))
+
+
+def _authenticate_case_insensitive(request, login: str, password: str):
+    from django.contrib.auth import authenticate
+
+    user = None
+    try:
+        found = User.objects.get(username__iexact=login)
+        user = authenticate(request, username=found.username, password=password)
+    except (User.DoesNotExist, User.MultipleObjectsReturned):
+        pass
+    return user
+
+
 def _user_data(user: User) -> dict:
     return {
         "id": user.id,
@@ -83,4 +158,6 @@ def _user_data(user: User) -> dict:
         "email": user.email,
         "avatar": user.avatar.url if user.avatar else None,
         "status": user.status,
+        "birth_date": user.birth_date.isoformat() if user.birth_date else None,
+        "message_privacy": user.message_privacy,
     }

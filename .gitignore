@@ -21,6 +21,12 @@ db.sqlite3
 /frontend/dev.log
 /frontend/dev.log.err
 
-# IDE
+# IDE / local
 .idea/
 .vscode/
+.run/
+
+# Local secrets / junk
+cookies.txt
+*.tmp
+.env.local

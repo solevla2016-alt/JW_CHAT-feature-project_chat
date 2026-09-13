@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const { dark, toggle } = useTheme();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,11 +33,27 @@ export default function RegisterPage() {
     }
 
     try {
-      const data = await apiFetch<{ id: number; username: string; email: string; avatar: string | null; status: string }>(
+      const data = await apiFetch<{ id: number; username: string; email: string; avatar: string | null; status: string; birth_date?: string | null }>(
         "/auth/register/",
-        { method: "POST", body: JSON.stringify({ username, email, password, password2 }) }
+        {
+          method: "POST",
+          body: JSON.stringify({
+            username,
+            email,
+            password,
+            password2,
+            birth_date: birthDate || undefined,
+          }),
+        }
       );
-      setUser({ id: data.id, username: data.username, email: data.email, avatar: data.avatar, status: data.status });
+      setUser({
+        id: data.id,
+        username: data.username,
+        email: data.email,
+        avatar: data.avatar,
+        status: data.status,
+        birth_date: data.birth_date ?? null,
+      });
       router.push("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка регистрации");
@@ -90,6 +107,16 @@ export default function RegisterPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              aria-label="Дата рождения"
+              className="input-base flex-1"
+              value={birthDate}
+              onChange={(e) => setBirthDate(e.target.value)}
+            />
+            <span className="whitespace-nowrap text-xs text-[var(--text-muted)]">дата рождения</span>
+          </div>
           <input
             type="password"
             placeholder="Пароль"

@@ -143,6 +143,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         user = self.scope["user"]
         reply_to_id = data.get("reply_to_id")
 
+        if not await self._can_dm(user, self.room):
+            return
+
         if reply_to_id:
             reply_valid = await self._validate_reply(reply_to_id)
             if not reply_valid:
@@ -563,6 +566,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
         ]
 
     @database_sync_to_async
+    def _can_dm(self, user, room: ChatRoom) -> bool:
+        if room.room_type != "direct":
+            return True
+        for other in room.members.exclude(id=user.pk):
+            if other.username == settings.AI_ASSISTANT_USERNAME:
+                continue
+            if other.message_privacy == User.MessagePrivacy.NOBODY:
+                return False
+        return True
+
     def _validate_reply(self, reply_to_id: int) -> bool:
         return Message.objects.filter(id=reply_to_id, room_id=self.room.id).exists()
 

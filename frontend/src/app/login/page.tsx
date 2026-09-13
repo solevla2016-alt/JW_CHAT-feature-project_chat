@@ -29,7 +29,8 @@ export default function LOGINPage() {
         { method: "POST", body: JSON.stringify({ username, password }) }
       );
       setUser({ id: data.id, username: data.username, email: data.email, avatar: data.avatar, status: data.status });
-      router.push("/chat");
+      const invite = new URLSearchParams(window.location.search).get("invite");
+      router.push(invite ? `/chat?invite=${invite}` : "/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка входа");
     } finally {
@@ -38,7 +39,10 @@ export default function LOGINPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+      <div className="pointer-events-none absolute -left-24 -top-24 h-80 w-80 rounded-full bg-brand-400/20 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -right-24 h-96 w-96 rounded-full bg-fuchsia-400/15 blur-3xl" />
+      <div className="pointer-events-none absolute left-1/2 top-1/3 h-72 w-72 -translate-x-1/2 rounded-full bg-cyan-400/10 blur-3xl" />
       <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-brand-50 via-transparent to-brand-100/50 dark:from-brand-950 dark:to-transparent" />
 
       <button
@@ -68,7 +72,7 @@ export default function LOGINPage() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
             type="text"
-            placeholder="Имя пользователя"
+            placeholder="Имя пользователя или Email"
             className="input-base"
             value={username}
             onChange={(e) => setUsername(e.target.value)}

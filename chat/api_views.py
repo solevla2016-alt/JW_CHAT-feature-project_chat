@@ -1,3 +1,6 @@
+import uuid
+
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import permissions, status
@@ -7,8 +10,14 @@ from rest_framework.response import Response
 
 from users.api_views import CsrfExemptSessionAuthentication
 
-from .models import ChatRoom, Message
-from .serializers import ChatRoomCreateSerializer, ChatRoomSerializer, MessageSerializer
+from .models import ChatRoom, Message, Server
+from .serializers import (
+    ChatRoomCreateSerializer,
+    ChatRoomSerializer,
+    MessageSerializer,
+    ServerCreateSerializer,
+    ServerSerializer,
+)
 
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"}
 AUDIO_TYPES = {"audio/mpeg", "audio/ogg", "audio/wav", "audio/webm", "audio/mp4", "audio/aac"}
@@ -27,11 +36,65 @@ def rooms_list_view(request: Request) -> Response:
         ChatRoom.objects
         .filter(Q(is_private=False) | Q(members=request.user) | Q(owner=request.user))
         .distinct()
-        .select_related("owner")
+        .select_related("owner", "server")
         .prefetch_related("members", "messages")
     )
     serializer = ChatRoomSerializer(rooms, many=True, context={"request": request})
     return Response(serializer.data)
+
+
+@api_view(["GET"])
+def servers_list_view(request: Request) -> Response:
+    servers = (
+        Server.objects
+        .filter(Q(members=request.user) | Q(owner=request.user))
+        .distinct()
+        .select_related("owner")
+        .prefetch_related("members")
+    )
+    serializer = ServerSerializer(servers, many=True)
+    return Response(serializer.data)
+
+
+@api_view(["GET"])
+def server_invite_view(request: Request, server_id: int) -> Response:
+    try:
+        server = Server.objects.get(id=server_id)
+    except Server.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if server.owner_id != request.user.id and not server.members.filter(id=request.user.id).exists():
+        return Response({"error": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
+
+    if server.invite_token is None:
+        server.invite_token = uuid.uuid4()
+        server.save(update_fields=["invite_token"])
+
+    return Response({"token": str(server.invite_token)})
+
+
+@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([CsrfExemptSessionAuthentication])
+def server_join_view(request: Request, token: str) -> Response:
+    try:
+        server = Server.objects.get(invite_token=token)
+    except (Server.DoesNotExist, ValueError, TypeError, ValidationError):
+        return Response({"error": "Приглашение недействительно"}, status=status.HTTP_404_NOT_FOUND)
+
+    server.members.add(request.user)
+    return Response(ServerSerializer(server).data)
+
+
+@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([CsrfExemptSessionAuthentication])
+def server_create_view(request: Request) -> Response:
+    serializer = ServerCreateSerializer(data=request.data, context={"request": request})
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    server = serializer.save()
+    return Response(ServerSerializer(server).data, status=status.HTTP_201_CREATED)
 
 
 @csrf_exempt

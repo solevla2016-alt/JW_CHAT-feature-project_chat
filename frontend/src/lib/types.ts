@@ -1,9 +1,11 @@
 export interface User {
   id: number;
   username: string;
-  email: string;
+  email?: string;
   avatar: string | null;
   status: string;
+  birth_date?: string | null;
+  message_privacy?: "everyone" | "contacts" | "nobody";
 }
 
 export interface ReplyTo {
@@ -35,15 +37,35 @@ export interface Message {
   transcription?: string;
 }
 
+export interface ChatRoomMember {
+  id: number;
+  username: string;
+  avatar: string | null;
+}
+
+export interface Server {
+  id: number;
+  name: string;
+  description: string;
+  avatar: string | null;
+  owner: string;
+  member_count: number;
+  created_at: string;
+}
+
 export interface ChatRoom {
   id: number;
   name: string;
   description: string;
   avatar: string | null;
   is_private: boolean;
+  room_type: "group" | "channel" | "direct";
   owner: string;
   member_count: number;
+  members?: ChatRoomMember[];
   unread_count?: number;
+  server: number | null;
+  server_name?: string;
   last_message: {
     text: string;
     username: string;

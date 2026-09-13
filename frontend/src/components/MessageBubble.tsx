@@ -99,11 +99,11 @@ export function MessageBubble({
 
         <div
           className={cn(
-            "relative rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
+            "relative rounded-2xl px-3.5 py-2.5 text-sm shadow-md",
             isAi
-              ? "rounded-tl-md border border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/60 dark:text-emerald-50"
+              ? "rounded-tl-md border border-emerald-200 bg-emerald-50 text-emerald-900 shadow-emerald-500/10 dark:border-emerald-900/50 dark:bg-emerald-950/60 dark:text-emerald-50"
               : isOwn
-                ? "rounded-br-md bg-[var(--message-own)] text-[var(--message-own-text)]"
+                ? "rounded-br-md bg-gradient-to-br from-brand-500 to-brand-600 text-white shadow-[var(--brand-primary)]/20"
                 : "rounded-tl-md bg-[var(--message-other)] text-[var(--message-other-text)]"
           )}
         >

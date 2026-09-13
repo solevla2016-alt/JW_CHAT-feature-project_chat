@@ -1,11 +1,65 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
+
+
+class Server(models.Model):
+    """Сервер (сообщество) — верхний уровень организации, как в Discord."""
+
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, default="")
+    avatar = models.ImageField(
+        upload_to="server_icons/",
+        blank=True,
+        null=True,
+    )
+    invite_token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        help_text="Токен для ссылки-приглашения на сервер",
+    )
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="owned_servers",
+    )
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name="servers",
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class ChatRoom(models.Model):
     """Комната чата JOIN WORK!."""
 
+    class RoomType(models.TextChoices):
+        GROUP = "group", "Группа"
+        CHANNEL = "channel", "Канал"
+        DIRECT = "direct", "Личный чат"
+
     name = models.CharField(max_length=100, unique=True)
+    room_type = models.CharField(
+        max_length=10,
+        choices=RoomType.choices,
+        default=RoomType.GROUP,
+    )
+    server = models.ForeignKey(
+        Server,
+        on_delete=models.CASCADE,
+        related_name="rooms",
+        null=True,
+        blank=True,
+    )
     description = models.TextField(blank=True, default="")
     avatar = models.ImageField(upload_to="chat_rooms/", blank=True, null=True)
     is_private = models.BooleanField(default=False)

@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, joinServer } from "@/lib/api";
 import { useChatStore } from "@/lib/store";
-import type { ChatRoom, User } from "@/lib/types";
+import type { ChatRoom, Server, User } from "@/lib/types";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatWindow } from "@/components/ChatWindow";
 
@@ -16,6 +16,7 @@ export default function ChatPage() {
     user,
     setUser,
     setRooms,
+    setServers,
     activeRoom,
     setActiveRoom,
     sidebarOpen,
@@ -28,8 +29,19 @@ export default function ChatPage() {
       try {
         const me = await apiFetch<User>("/auth/me/");
         setUser(me);
-        const rooms = await apiFetch<ChatRoom[]>("/chat/rooms/");
+
+        const invite = new URLSearchParams(window.location.search).get("invite");
+        if (invite) {
+          await joinServer(invite).catch(() => {});
+          window.history.replaceState(null, "", "/chat");
+        }
+
+        const [rooms, servers] = await Promise.all([
+          apiFetch<ChatRoom[]>("/chat/rooms/"),
+          apiFetch<Server[]>("/chat/servers/"),
+        ]);
         setRooms(rooms);
+        setServers(servers);
         if (rooms.length > 0 && !activeRoom) {
           setActiveRoom(rooms[0]);
         }

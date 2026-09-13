@@ -55,6 +55,43 @@
     @apply bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+
+  /* Анимированная aurora-подложка */
+  .chat-app::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(600px 400px at 15% 10%, rgba(99, 102, 241, 0.18), transparent 60%),
+      radial-gradient(700px 500px at 85% 15%, rgba(236, 72, 153, 0.12), transparent 60%),
+      radial-gradient(900px 600px at 50% 110%, rgba(34, 211, 238, 0.12), transparent 60%);
+    transition: opacity 0.4s;
+  }
+
+  .chat-app::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes aurora-drift {
+    0% { transform: translateX(0) translateY(0) scale(1); }
+    50% { transform: translateX(40px) translateY(-20px) scale(1.05); }
+    100% { transform: translateX(0) translateY(0) scale(1); }
+  }
+
+  .chat-app::before {
+    animation: aurora-drift 24s ease-in-out infinite;
+  }
 }
 
 @layer components {
@@ -100,7 +137,7 @@
   .btn-primary {
     @apply rounded-xl bg-[var(--brand-primary)] px-6 py-3 font-medium text-white
            transition-all duration-200
-           hover:bg-[var(--brand-hover)] hover:shadow-lg
+           hover:bg-[var(--brand-hover)] hover:shadow-lg hover:shadow-black/10
            active:scale-[0.98]
            disabled:cursor-not-allowed disabled:opacity-50;
   }

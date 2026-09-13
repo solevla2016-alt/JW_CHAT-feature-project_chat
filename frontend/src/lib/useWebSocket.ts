@@ -119,6 +119,7 @@ export function useWebSocket(roomName: string | null) {
     };
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return;
       const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000);
       reconnectAttempts.current += 1;
       reconnectTimeoutRef.current = setTimeout(connect, delay);

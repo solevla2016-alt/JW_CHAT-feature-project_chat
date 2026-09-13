@@ -1,11 +1,11 @@
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api";
 
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api";
 
 export const WS_URL =
-  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/chat";
+  process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:8000/ws/chat";
 
 export async function apiFetch<T>(
   path: string,
@@ -48,6 +48,29 @@ export async function uploadFile<T>(
     throw new Error(error.error ?? error.message ?? "Ошибка загрузки");
   }
   return res.json();
+}
+
+export async function uploadAvatar<T>(file: File): Promise<T> {
+  const form = new FormData();
+  form.append("avatar", file);
+  const res = await fetch(`${API_BASE}/auth/avatar/`, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.error ?? error.message ?? "Ошибка загрузки аватара");
+  }
+  return res.json();
+}
+
+export async function joinServer<T>(token: string): Promise<T> {
+  return apiFetch<T>(`/chat/servers/join/${token}/`, { method: "POST" });
+}
+
+export async function getServerInvite<T>(serverId: number): Promise<T> {
+  return apiFetch<T>(`/chat/servers/${serverId}/invite/`);
 }
 
 const apiOrigin = new URL(API_URL).origin;

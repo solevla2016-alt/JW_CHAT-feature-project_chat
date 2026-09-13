@@ -1,7 +1,19 @@
 from rest_framework import permissions, serializers
 from rest_framework.request import Request
 
-from .models import ChatRoom, Message, Reaction, ReadStatus
+from .models import ChatRoom, Message, Reaction, ReadStatus, Server
+
+
+class ServerSerializer(serializers.ModelSerializer):
+    owner = serializers.CharField(source="owner.username", read_only=True)
+    member_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Server
+        fields = ("id", "name", "description", "avatar", "owner", "member_count", "created_at")
+
+    def get_member_count(self, obj: Server) -> int:
+        return obj.members.count() + 1
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -43,10 +55,31 @@ class ChatRoomSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
+    server = serializers.PrimaryKeyRelatedField(read_only=True)
+    server_name = serializers.CharField(source="server.name", read_only=True, default="")
 
     class Meta:
         model = ChatRoom
-        fields = ("id", "name", "description", "avatar", "is_private", "owner", "member_count", "last_message", "unread_count", "created_at")
+        fields = ("id", "name", "description", "avatar", "is_private", "room_type", "owner", "member_count", "members", "last_message", "unread_count", "server", "server_name", "created_at")
+
+    def get_members(self, obj: ChatRoom) -> list[dict]:
+        users = obj.members.select_related().order_by("username")
+        result = [
+            {
+                "id": u.id,
+                "username": u.username,
+                "avatar": u.avatar.url if u.avatar else None,
+            }
+            for u in users
+        ]
+        if obj.owner and not any(m["id"] == obj.owner.id for m in result):
+            result.insert(0, {
+                "id": obj.owner.id,
+                "username": obj.owner.username,
+                "avatar": obj.owner.avatar.url if obj.owner.avatar else None,
+            })
+        return result
 
     def get_member_count(self, obj: ChatRoom) -> int:
         return obj.members.count() + 1
@@ -77,14 +110,63 @@ class ChatRoomSerializer(serializers.ModelSerializer):
 
 
 class ChatRoomCreateSerializer(serializers.ModelSerializer):
+    server = serializers.PrimaryKeyRelatedField(
+        queryset=Server.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = ChatRoom
-        fields = ("name", "description", "is_private")
+        fields = ("name", "description", "is_private", "room_type", "server")
 
     def create(self, validated_data: dict) -> ChatRoom:
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        request = self.context["request"]
+        server = validated_data.pop("server", None)
+
+        room_type = validated_data.get("room_type")
+
+        if room_type == ChatRoom.RoomType.DIRECT:
+            other = User.objects.filter(username__iexact=validated_data.get("name", "")).first()
+            if other and other.id != request.user.id and other.username != "AI Assistant":
+                privacy = other.message_privacy
+                if privacy == User.MessagePrivacy.NOBODY:
+                    raise serializers.ValidationError(
+                        {"direct": f"{other.username} запретил(а) личные сообщения"}
+                    )
+                if privacy == User.MessagePrivacy.CONTACTS:
+                    has_dm = ChatRoom.objects.filter(
+                        room_type=ChatRoom.RoomType.DIRECT,
+                        members=request.user,
+                    ).filter(members=other).exists()
+                    if not has_dm:
+                        raise serializers.ValidationError(
+                            {"direct": f"{other.username} принимает сообщения только от контактов"}
+                        )
+
         room = ChatRoom.objects.create(
+            owner=request.user,
+            server=server,
+            **validated_data,
+        )
+        room.members.add(request.user)
+        if room_type == ChatRoom.RoomType.DIRECT and other:
+            room.members.add(other)
+        return room
+
+
+class ServerCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Server
+        fields = ("name", "description")
+
+    def create(self, validated_data: dict) -> Server:
+        server = Server.objects.create(
             owner=self.context["request"].user,
             **validated_data,
         )
-        room.members.add(self.context["request"].user)
-        return room
+        server.members.add(self.context["request"].user)
+        return server

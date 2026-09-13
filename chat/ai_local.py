@@ -119,6 +119,49 @@ _KNOWLEDGE: list[tuple[list[str], str]] = [
         "```\n\n"
         "После добавления поля в модель всегда запускай makemigrations + migrate.",
     ),
+    (
+        ["fastapi", "фастапи", "pydantic"],
+        "FastAPI — современный веб-фреймворк Python с типами и автодокументацией.\n\n"
+        "```python\n"
+        "from fastapi import FastAPI\n"
+        "from pydantic import BaseModel\n\n"
+        "app = FastAPI()\n\n"
+        "class Item(BaseModel):\n"
+        "    name: str\n"
+        "    price: float\n\n"
+        "@app.post('/items/')\n"
+        "def create_item(item: Item) -> Item:\n"
+        "    return item\n"
+        "```\n\n"
+        "Валидация через Pydantic, интерактивная документация на /docs "
+        "(Swagger) и /redoc. Асинхронные обработчики — через `async def`.",
+    ),
+    (
+        ["django", "drf", "api", "serializer", "сериализатор"],
+        "Django REST Framework — создание REST API на Django.\n\n"
+        "```python\n"
+        "from rest_framework import serializers\n\n"
+        "class ItemSerializer(serializers.ModelSerializer):\n"
+        "    class Meta:\n"
+        "        model = Item\n"
+        "        fields = ['id', 'name', 'price']\n"
+        "```\n\n"
+        "ViewSet + Router дают CRUD из коробки, а Parser/Throttle/Pagination "
+        "настраиваются декларативно.",
+    ),
+    (
+        ["flask", "фласк"],
+        "Flask — лёгкий веб-фреймворк Python.\n\n"
+        "```python\n"
+        "from flask import Flask, jsonify\n\n"
+        "app = Flask(__name__)\n\n"
+        "@app.route('/ping')\n"
+        "def ping():\n"
+        "    return jsonify({'ok': True})\n"
+        "```\n\n"
+        "Подходит для небольших сервисов и API. Для масштабных проектов "
+        "учитывай Blueprints и инъекцию зависимостей.",
+    ),
     # --- JavaScript / TypeScript / React ---
     (
         ["замыкан", "closure", "замыкание", "javascript"],
@@ -361,8 +404,9 @@ _KNOWLEDGE: list[tuple[list[str], str]] = [
 ]
 
 _HINTS = [
-    "Я — AI-ассистент по программированию. Отвечаю на вопросы о разработке ПО: "
-    "языки, фреймворки, алгоритмы, паттерны, БД, Git, Docker, архитектура.",
+    "Я — твой ментор по языку Python. Твоя главная задача — помочь с кодом на "
+    "Python: объяснить идиомы, показать примеры, подсказать лучший способ. "
+    "Также разбираюсь в Django, SQL, Git, Docker, алгоритмах и паттернах.",
 ]
 
 
@@ -393,11 +437,11 @@ def ai_help_text() -> str:
     lines = [
         "Доступные команды:",
         "",
-        "`/ai <вопрос>` — спросить AI-ассистента о разработке",
-        "`/summarize` — краткое содержание последних сообщений",
+        "`/ai <вопрос>` — спросить меня как ментора по Python",
         "`/help` — этот список",
         "",
-        "Темы, которые я знаю: Python, Django, JS, TypeScript, React, Next.js, "
-        "SQL, Git, Docker, алгоритмы, паттерны, архитектура.",
+        "Моя специализация — Python (синтаксис, идиомы, асинхронность, ООП, "
+        "тесты, оптимизация). Также разбираюсь в веб-фреймворках Django, DRF, "
+        "FastAPI, Flask и в SQL, Git, Docker, алгоритмах и паттернах.",
     ]
     return "\n".join(lines)
