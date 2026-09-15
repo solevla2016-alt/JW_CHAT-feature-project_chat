@@ -7,6 +7,7 @@ from .api_views import (
     me_view,
     profile_update_view,
     register_view,
+    set_role_view,
     users_list_view,
 )
 
@@ -18,4 +19,5 @@ urlpatterns = [
     path("users/", users_list_view, name="api_users"),
     path("profile/", profile_update_view, name="api_profile"),
     path("avatar/", avatar_upload_view, name="api_avatar"),
+    path("set-role/", set_role_view, name="api_set_role"),
 ]

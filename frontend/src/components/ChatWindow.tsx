@@ -1,10 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Menu, Users, X } from "lucide-react";
+import { Loader2, Maximize2, Menu, Minimize2, MonitorUp, MonitorStop, Users, X } from "lucide-react";
 import { useChatStore } from "@/lib/store";
 import { useWebSocket } from "@/lib/useWebSocket";
-import { API_URL } from "@/lib/api";
+import { API_URL, mediaUrl } from "@/lib/api";
+import {
+  resetScreenShare,
+  setScreenShareHandlers,
+  startScreenShare,
+  stopScreenShare,
+} from "@/lib/screenShare";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { TypingIndicator } from "./TypingIndicator";
@@ -13,7 +19,7 @@ import { MembersPanel } from "./MembersPanel";
 
 export function ChatWindow() {
   const { activeRoom, messages, setSidebarOpen } = useChatStore();
-  const { sendMessage, startTyping, editMessage, toggleReaction, sendAiRequest, togglePin, sendRead } = useWebSocket(activeRoom?.name ?? null);
+  const { sendMessage, startTyping, editMessage, deleteMessage, toggleReaction, sendAiRequest, togglePin, sendRead } = useWebSocket(activeRoom?.name ?? null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const resetRoomUnread = useChatStore((s) => s.resetRoomUnread);
   const [replyTarget, setReplyTarget] = useState<{ id: number; username: string; text: string } | null>(null);
@@ -28,6 +34,84 @@ export function ChatWindow() {
   const [searchResults, setSearchResults] = useState<Array<{ id: number; username: string; message: string; created_at: string }>>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map);
+  const user = useChatStore((s) => s.user);
+
+  const [screenState, setScreenState] = useState<{ broadcaster: string; isMe: boolean } | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [startingShare, setStartingShare] = useState(false);
+
+  useEffect(() => {
+    setScreenShareHandlers({
+      onSessionStart: (broadcaster) =>
+        setScreenState({ broadcaster, isMe: broadcaster === user?.username }),
+      onRemoteStream: (_username, stream) => {
+        setRemoteStream((prev) => {
+          if (prev && prev !== stream) prev.getTracks().forEach((t) => t.stop());
+          return stream;
+        });
+      },
+      onSessionEnd: () => {
+        setScreenState(null);
+        setRemoteStream((prev) => {
+          prev?.getTracks().forEach((t) => t.stop());
+          return null;
+        });
+      },
+    });
+  }, [user?.username]);
+
+  const lastRoomId = useRef<number | null>(null);
+  useEffect(() => {
+    if (lastRoomId.current !== null && lastRoomId.current !== activeRoom?.id) {
+      resetScreenShare();
+      setScreenState(null);
+      setRemoteStream((prev) => {
+        prev?.getTracks().forEach((t) => t.stop());
+        return null;
+      });
+    }
+    lastRoomId.current = activeRoom?.id ?? null;
+  }, [activeRoom?.id]);
+
+  useEffect(() => {
+    return () => {
+      resetScreenShare();
+    };
+  }, []);
+
+  const handleStartScreenShare = useCallback(async () => {
+    if (startingShare || !activeRoom || !user) return;
+    setStartingShare(true);
+    try {
+      const [mic, display] = await Promise.all([
+        navigator.mediaDevices.getUserMedia({ audio: true }),
+        navigator.mediaDevices.getDisplayMedia({ video: true }),
+      ]);
+      const combined = new MediaStream();
+      display.getVideoTracks().forEach((t) => combined.addTrack(t));
+      mic.getAudioTracks().forEach((t) => combined.addTrack(t));
+
+      setScreenState({ broadcaster: user.username, isMe: true });
+      setRemoteStream(combined);
+      await startScreenShare(combined, user.username);
+
+      const shutdown = () => {
+        display.getVideoTracks()[0]?.removeEventListener("ended", shutdown);
+        stopScreenShare();
+        setScreenState(null);
+      };
+      display.getVideoTracks()[0]?.addEventListener("ended", shutdown);
+    } catch {
+      // пользователь отменил выбор экрана или отказал в микрофоне
+    } finally {
+      setStartingShare(false);
+    }
+  }, [startingShare, activeRoom, user]);
+
+  const handleStopScreenShare = useCallback(() => {
+    stopScreenShare();
+    setScreenState((s) => (s?.isMe ? null : s));
+  }, []);;
 
   const scrollToMessage = useCallback((id: number) => {
     const el = messageRefs.current.get(id);
@@ -72,9 +156,18 @@ export function ChatWindow() {
     }
   }, [activeRoom?.id, messages.length, activeRoom, resetRoomUnread, sendRead]);
 
+  const meUsername = user?.username ?? "";
+  const isModerator =
+    user?.role === "moderator" || user?.role === "admin" || activeRoom?.owner === meUsername;
+  const canDelete = (msg: (typeof messages)[number]) =>
+    msg.username === meUsername || isModerator;
+
   if (!activeRoom) {
     return <EmptyState onOpenSidebar={() => setSidebarOpen(true)} />;
   }
+
+  const canScreenShare =
+    activeRoom.room_type === "group" || activeRoom.room_type === "channel";
 
   return (
     <div className="flex h-full min-w-0 flex-1">
@@ -87,7 +180,20 @@ export function ChatWindow() {
           searchOpen={searchOpen}
           onToggleMembers={() => setMembersOpen((v) => !v)}
           membersOpen={membersOpen}
+          canScreenShare={canScreenShare}
+          screenShareActive={!!screenState}
+          screenShareLoading={startingShare}
+          onToggleScreenShare={screenState?.isMe ? handleStopScreenShare : handleStartScreenShare}
         />
+
+        {screenState && (
+          <ScreenShareBar
+            broadcaster={screenState.broadcaster}
+            isMe={screenState.isMe}
+            stream={remoteStream}
+            onStop={handleStopScreenShare}
+          />
+        )}
 
       {searchOpen && (
         <div className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 md:px-6">
@@ -154,6 +260,7 @@ export function ChatWindow() {
               onEdit={() => setEditingTarget({ id: msg.id, text: msg.message })}
               onToggleReaction={(emoji) => toggleReaction(msg.id, emoji)}
               onTogglePin={() => togglePin(msg.id)}
+              onDelete={canDelete(msg) ? () => deleteMessage(msg.id) : undefined}
             />
           </div>
         ))}
@@ -214,6 +321,10 @@ export function ChatHeader({
   searchOpen,
   onToggleMembers,
   membersOpen,
+  canScreenShare,
+  screenShareActive,
+  screenShareLoading,
+  onToggleScreenShare,
 }: {
   roomName: string;
   roomType?: "group" | "channel" | "direct";
@@ -222,6 +333,10 @@ export function ChatHeader({
   searchOpen: boolean;
   onToggleMembers: () => void;
   membersOpen: boolean;
+  canScreenShare?: boolean;
+  screenShareActive?: boolean;
+  screenShareLoading?: boolean;
+  onToggleScreenShare?: () => void;
 }) {
   const onlineUsers = useChatStore((s) => s.onlineUsers);
   const typeLabel =
@@ -253,6 +368,21 @@ export function ChatHeader({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {canScreenShare && onToggleScreenShare && (
+          <button
+            onClick={onToggleScreenShare}
+            disabled={screenShareLoading}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              screenShareActive
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
+            }`}
+            title={screenShareActive ? "Остановить показ экрана" : "Показать экран участникам"}
+          >
+            {screenShareActive ? <MonitorStop size={16} /> : <MonitorUp size={16} />}
+            {screenShareActive ? "Остановить" : "Экран"}
+          </button>
+        )}
         <button
           onClick={onToggleMembers}
           className={`rounded-lg p-2 transition-colors ${
@@ -278,10 +408,15 @@ export function ChatHeader({
         <div className="flex -space-x-2">
           {onlineUsers.slice(0, 5).map((u) => (
             <div
-              key={u}
-              className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[var(--bg-primary)] bg-[var(--brand-primary)] text-[10px] font-bold text-white"
+              key={u.username}
+              className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border-2 border-[var(--bg-primary)] bg-[var(--brand-primary)] text-[10px] font-bold text-white"
+              title={u.username}
             >
-              {u.slice(0, 2).toUpperCase()}
+              {u.avatar ? (
+                <img src={mediaUrl(u.avatar)} alt={u.username} className="h-full w-full object-cover" />
+              ) : (
+                u.username.slice(0, 2).toUpperCase()
+              )}
             </div>
           ))}
         </div>
@@ -295,6 +430,118 @@ function AiTypingIndicator() {
     <div className="mt-2 flex items-center gap-2 text-xs text-[var(--text-secondary)]">
       <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-[var(--brand-primary)]" />
       AI думает...
+    </div>
+  );
+}
+
+function VideoSurface({
+  stream,
+  className,
+  muted = false,
+}: {
+  stream: MediaStream;
+  className: string;
+  muted?: boolean;
+}) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.srcObject = stream;
+      void el.play().catch(() => {});
+    }
+    return () => {
+      if (el) el.srcObject = null;
+    };
+  }, [stream]);
+  return <video ref={ref} autoPlay playsInline muted={muted} className={className} />;
+}
+
+function ScreenShareBar({
+  broadcaster,
+  isMe,
+  stream,
+  onStop,
+}: {
+  broadcaster: string;
+  isMe: boolean;
+  stream: MediaStream | null;
+  onStop: () => void;
+}) {
+  const videoWrapRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    const el = videoWrapRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await el.requestFullscreen();
+      }
+    } catch {
+      // fullscreen не поддерживается или заблокирован
+    }
+  }, []);
+
+  return (
+    <div className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/90 backdrop-blur">
+      <div className="mx-auto w-full max-w-7xl px-4 py-2 md:px-6">
+        <div className="flex items-center gap-3">
+          <div
+            ref={videoWrapRef}
+            className="relative w-full overflow-hidden rounded-xl border border-[var(--border-color)] bg-black"
+            style={{ minHeight: "30vh", height: "45vh", maxHeight: "70vh" }}
+          >
+            {stream ? (
+              <VideoSurface stream={stream} muted={isMe} className="h-full w-full object-contain" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center gap-2 text-base text-white/70">
+                <Loader2 className="animate-spin" size={24} />
+                {isMe ? "Вы показываете экран..." : "Подключение к экрану..."}
+              </div>
+            )}
+            <div className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+              LIVE
+            </div>
+            <button
+              onClick={toggleFullscreen}
+              className="absolute right-3 top-3 rounded-lg bg-black/60 p-2 text-white/90 backdrop-blur transition-colors hover:bg-black/80 hover:text-white"
+              title={isFullscreen ? "Свернуть" : "Во весь экран"}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+          </div>
+          <div className="flex shrink-0 flex-col items-center gap-2">
+            <span className="inline-flex items-center gap-2 text-sm font-medium text-[var(--text-secondary)]">
+              <MonitorUp size={18} />
+              {isMe ? "Вы" : broadcaster} {isMe ? "показываете" : "показывает"} экран
+            </span>
+            {isMe ? (
+              <button
+                onClick={onStop}
+                className="rounded-lg bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600"
+              >
+                <MonitorStop size={16} className="mr-1 inline" />
+                Остановить
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-sm text-emerald-500">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                смотрите в реальном времени
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

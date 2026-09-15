@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCheck, CornerUpLeft, Download, FileIcon, Loader2, Pencil, Pin, SmilePlus, Volume2 } from "lucide-react";
+import { CheckCheck, CornerUpLeft, Download, FileIcon, Loader2, Pencil, Pin, SmilePlus, Trash2, Volume2 } from "lucide-react";
 import type { Message, ReactionItem } from "@/lib/types";
 import { cn, formatTime } from "@/lib/utils";
 import { mediaUrl, API_URL } from "@/lib/api";
@@ -18,6 +18,7 @@ export function MessageBubble({
   onEdit,
   onToggleReaction,
   onTogglePin,
+  onDelete,
 }: {
   message: Message;
   currentUser: string;
@@ -26,6 +27,7 @@ export function MessageBubble({
   onEdit: () => void;
   onToggleReaction: (emoji: string) => void;
   onTogglePin: () => void;
+  onDelete?: () => void;
 }) {
   const isOwn = message.username === currentUser;
   const isAi = message.is_ai ?? false;
@@ -77,18 +79,25 @@ export function MessageBubble({
       transition={{ duration: 0.2 }}
       className={cn("group flex gap-2.5", isOwn ? "flex-row-reverse" : "flex-row")}
     >
-      {!isOwn && (
-        <div
-          className={cn(
-            "mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white",
-            isAi
-              ? "bg-gradient-to-br from-emerald-400 to-teal-600"
-              : "bg-gradient-to-br from-brand-400 to-brand-600"
-          )}
-        >
-          {isAi ? "AI" : message.username.slice(0, 2).toUpperCase()}
-        </div>
-      )}
+      {!isOwn &&
+        (message.avatar ? (
+          <img
+            src={mediaUrl(message.avatar)}
+            alt={message.username}
+            className="mt-1 h-8 w-8 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <div
+            className={cn(
+              "mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white",
+              isAi
+                ? "bg-gradient-to-br from-emerald-400 to-teal-600"
+                : "bg-gradient-to-br from-brand-400 to-brand-600"
+            )}
+          >
+            {isAi ? "AI" : message.username.slice(0, 2).toUpperCase()}
+          </div>
+        ))}
 
       <div className={cn("flex max-w-[70%] flex-col md:max-w-[60%]", isOwn ? "items-end" : "items-start")}>
         {!isOwn && (
@@ -268,6 +277,15 @@ export function MessageBubble({
               title={isPinned ? "Открепить" : "Закрепить"}
             >
               <Pin size={14} />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="rounded p-1 text-[var(--text-muted)] hover:text-red-500"
+              title="Удалить сообщение"
+            >
+              <Trash2 size={14} />
             </button>
           )}
         </div>

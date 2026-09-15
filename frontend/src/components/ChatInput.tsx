@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CornerUpLeft, Mic, Paperclip, Pencil, SendHorizonal, Smile, Square, Video, X } from "lucide-react";
-import { uploadFile, mediaUrl, API_URL } from "@/lib/api";
+import { API_URL } from "@/lib/api";
 
 const EMOJI_LIST = [
   "😀", "😂", "🤣", "😊", "😍", "😘", "😉", "😎",
@@ -182,7 +182,7 @@ export function ChatInput({
         const data = await res.json();
         onSendWithAttachment(text, {
           attachment_type: data.attachment_type,
-          attachment_url: mediaUrl(data.attachment_url),
+          attachment_url: data.attachment_url,
           attachment_name: data.attachment_name,
           duration: data.duration ?? pending.duration ?? null,
         });

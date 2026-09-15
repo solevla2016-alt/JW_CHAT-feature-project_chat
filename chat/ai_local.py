@@ -29,7 +29,7 @@ _KNOWLEDGE: list[tuple[list[str], str]] = [
         "Применяется для логирования, кэширования, проверки прав.",
     ),
     (
-        ["python", "генератор", "generator", "yield"],
+        ["python", "генератор", "generator", "yield", "send", "next"],
         "Генератор — функция с `yield`, которая выдаёт значения по одному, "
         "не храня весь список в памяти.\n\n"
         "```python\n"
@@ -220,14 +220,14 @@ _KNOWLEDGE: list[tuple[list[str], str]] = [
         "перезапускается.",
     ),
     (
-        ["next.js", "nextjs", "next", "ssr"],
+        ["next.js", "nextjs", "ssr", "ssg"],
         "Next.js — React-фреймворк с SSR/SSG.\n\n"
         "- `app/` — парадигма App Router (Next 13+)\n"
         "- Серверные компоненты (`'use server'`) и клиентские (`'use client'`)\n"
         "- `next dev` — разработка, `next build` — прод-сборка\n"
         "- Файловый роутинг: `app/page.tsx`, `app/blog/[id]/page.tsx`",
     ),
-    (["javascript", "event", "событие", "делегирован"], 
+    (["javascript", "event", "событие", "делегирован"],
         "Делегирование событий в JS — вешаем один обработчик на родителя.\n\n"
         "```js\n"
         "list.addEventListener('click', (e) => {\n"
@@ -268,7 +268,7 @@ _KNOWLEDGE: list[tuple[list[str], str]] = [
         "```\n\n"
         "Эквивалентен JOIN; на больших данных JOIN часто быстрее.",
     ),
-    (["sql", "запрос", "выбрат"], 
+    (["sql", "запрос", "выбрат"],
         "Базовый SQL-запрос:\n\n"
         "```sql\n"
         "SELECT col1, col2\n"
@@ -414,9 +414,7 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.lower()).strip()
 
 
-def local_ai_answer(prompt: str, history: list[dict[str, Any]] | None = None) -> str | None:
-    """Возвращает ответ из локальной базы, либо None, если вопрос не распознан."""
-    q = _normalize(prompt)
+def _match_query(q: str) -> str | None:
     best: tuple[int, str] | None = None
 
     for keywords, answer in _KNOWLEDGE:
@@ -428,8 +426,31 @@ def local_ai_answer(prompt: str, history: list[dict[str, Any]] | None = None) ->
         if score and (best is None or score > best[0]):
             best = (score, answer)
 
-    if best and best[0] >= 1:
-        return best[1]
+    return best[1] if best and best[0] >= 1 else None
+
+
+def local_ai_answer(prompt: str, history: list[dict[str, Any]] | None = None) -> str | None:
+    """Возвращает ответ из локальной базы, либо None, если вопрос не распознан.
+
+    Если вопрос не распознан (уточнение, переформулировка), пересматриваются
+    предыдущие сообщения пользователя из контекста: берётся первый совпавший
+    вопрос пользователя и для него ищется ответ.
+    """
+    q = _normalize(prompt)
+    ans = _match_query(q)
+    if ans:
+        return ans
+
+    if history:
+        for m in reversed(history):
+            if m.get("is_ai"):
+                continue
+            prev = _normalize(m.get("text", "") or "")
+            if not prev or prev == q:
+                continue
+            ans = _match_query(prev)
+            if ans:
+                return ans
     return None
 
 

@@ -5,10 +5,22 @@ from django.db import models
 class User(AbstractUser):
     """Модель пользователя JOIN WORK!."""
 
+    class Role(models.TextChoices):
+        MEMBER = "member", "Пользователь"
+        MODERATOR = "moderator", "Модератор"
+        ADMIN = "admin", "Администратор"
+
     class MessagePrivacy(models.TextChoices):
         EVERYONE = "everyone", "Все"
         CONTACTS = "contacts", "Контакты"
         NOBODY = "nobody", "Никто"
+
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.MEMBER,
+        help_text="Роль пользователя в сервисе",
+    )
 
     avatar = models.ImageField(
         upload_to="avatars/%Y/%m",

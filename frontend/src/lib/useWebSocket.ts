@@ -4,6 +4,14 @@ import { useCallback, useEffect, useRef } from "react";
 import { useChatStore } from "./store";
 import { WS_URL } from "./api";
 import type { Message, WebSocketMessage } from "./types";
+import {
+  handleAnswer,
+  handleCandidate,
+  handleOffer,
+  handleScreenStart,
+  handleScreenStop,
+  setSignalSender,
+} from "./screenShare";
 
 const WS_BASE = WS_URL;
 
@@ -13,9 +21,11 @@ export function useWebSocket(roomName: string | null) {
   const reconnectAttempts = useRef(0);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const isTypingRef = useRef(false);
+  const pendingMessagesRef = useRef<Record<string, unknown>[]>([]);
 
   const {
     addMessage,
+    removeMessage,
     updateMessage,
     setMessages,
     setOnlineUsers,
@@ -29,11 +39,29 @@ export function useWebSocket(roomName: string | null) {
   const connect = useCallback(() => {
     if (!roomName) return;
 
-    const ws = new WebSocket(`${WS_BASE}/${roomName}/`);
+    console.debug("[ws] connecting to room:", roomName);
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(`${WS_BASE}/${encodeURIComponent(roomName)}/`);
+    } catch (err) {
+      console.error("[ws] failed to create WebSocket:", err);
+      reconnectAttempts.current += 1;
+      reconnectTimeoutRef.current = setTimeout(connect, 2000);
+      return;
+    }
     wsRef.current = ws;
 
     ws.onopen = () => {
+      console.debug("[ws] open", roomName);
       reconnectAttempts.current = 0;
+      setSignalSender((msg) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(msg));
+        }
+      });
+      const queued = pendingMessagesRef.current.splice(0);
+      queued.forEach((msg) => ws.send(JSON.stringify(msg)));
     };
 
     ws.onmessage = (event) => {
@@ -81,13 +109,23 @@ export function useWebSocket(roomName: string | null) {
 
         case "online_users":
           if (data.users) {
-            setOnlineUsers(data.users);
+            setOnlineUsers(
+              data.users.map((u) =>
+                typeof u === "string" ? { username: u, avatar: null } : u
+              )
+            );
           }
           break;
 
         case "message_edited":
           if (data.id && data.message && data.updated_at) {
             updateMessage(data.id, data.message, data.updated_at);
+          }
+          break;
+
+        case "message_deleted":
+          if (data.id) {
+            removeMessage(data.id);
           }
           break;
 
@@ -101,8 +139,28 @@ export function useWebSocket(roomName: string | null) {
           break;
 
         case "ai_typing":
-          if (data.ai_typing !== undefined) {
-            setAiTyping(data.ai_typing);
+          setAiTyping(data.is_typing ?? data.ai_typing ?? false);
+          break;
+
+        case "ai_response":
+          if (data.id && data.username && data.created_at) {
+            addMessage({
+              id: data.id,
+              username: data.username,
+              avatar: data.avatar ?? null,
+              message: data.message ?? "",
+              created_at: data.created_at,
+              is_edited: data.is_edited ?? false,
+              reply_to: data.reply_to ?? null,
+              reactions: data.reactions ?? [],
+              attachment_type: data.attachment_type ?? "none",
+              attachment_url: data.attachment_url ?? null,
+              attachment_name: data.attachment_name ?? "",
+              duration: data.duration ?? null,
+              is_ai: data.is_ai ?? true,
+              transcription: data.transcription ?? "",
+            });
+            removeTypingUser(data.username);
           }
           break;
 
@@ -112,6 +170,28 @@ export function useWebSocket(roomName: string | null) {
           }
           break;
 
+        case "screen_start":
+          if (data.broadcaster) {
+            handleScreenStart(data.broadcaster);
+          }
+          break;
+
+        case "screen_stop":
+          handleScreenStop();
+          break;
+
+        case "signal": {
+          const { from, sdp, candidate } = data;
+          if (data.signal_type === "webrtc_offer" && from && sdp) {
+            void handleOffer(from, sdp);
+          } else if (data.signal_type === "webrtc_answer" && from && sdp) {
+            void handleAnswer(from, sdp);
+          } else if (data.signal_type === "webrtc_candidate" && from && candidate) {
+            void handleCandidate(from, candidate);
+          }
+          break;
+        }
+
         case "error":
           console.error("WS error:", data.error);
           break;
@@ -119,6 +199,7 @@ export function useWebSocket(roomName: string | null) {
     };
 
     ws.onclose = () => {
+      console.debug("[ws] closed", roomName);
       if (wsRef.current !== ws) return;
       const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000);
       reconnectAttempts.current += 1;
@@ -126,9 +207,9 @@ export function useWebSocket(roomName: string | null) {
     };
 
     ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
+      console.error("[ws] WebSocket error:", error);
     };
-  }, [roomName, addMessage, updateMessage, setMessages, setOnlineUsers, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping]);
+  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned]);
 
   useEffect(() => {
     connect();
@@ -140,43 +221,48 @@ export function useWebSocket(roomName: string | null) {
     };
   }, [connect]);
 
+  const sendPayload = useCallback((payload: Record<string, unknown>) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(payload));
+    } else {
+      pendingMessagesRef.current.push(payload);
+    }
+  }, []);
+
   const sendMessage = useCallback((text: string, replyToId?: number, attachment?: { attachment_type: string; attachment_url: string; attachment_name: string; duration?: number | null }) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     const payload: Record<string, unknown> = { action: "message", message: text };
     if (replyToId) payload.reply_to_id = replyToId;
     if (attachment) Object.assign(payload, attachment);
-    wsRef.current.send(JSON.stringify(payload));
-  }, []);
+    sendPayload(payload);
+  }, [sendPayload]);
 
   const sendTyping = useCallback((isTyping: boolean) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ action: "typing", is_typing: isTyping }));
-  }, []);
+    sendPayload({ action: "typing", is_typing: isTyping });
+  }, [sendPayload]);
 
   const editMessage = useCallback((messageId: number, text: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ action: "edit", message_id: messageId, text }));
-  }, []);
+    sendPayload({ action: "edit", message_id: messageId, text });
+  }, [sendPayload]);
+
+  const deleteMessage = useCallback((messageId: number) => {
+    sendPayload({ action: "delete", message_id: messageId });
+  }, [sendPayload]);
 
   const toggleReaction = useCallback((messageId: number, emoji: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ action: "reaction", message_id: messageId, emoji }));
-  }, []);
+    sendPayload({ action: "reaction", message_id: messageId, emoji });
+  }, [sendPayload]);
 
   const sendAiRequest = useCallback((prompt: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ action: "ai_request", prompt }));
-  }, []);
+    sendPayload({ action: "ai_request", prompt });
+  }, [sendPayload]);
 
   const togglePin = useCallback((messageId: number) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ action: "pin", message_id: messageId }));
-  }, []);
+    sendPayload({ action: "pin", message_id: messageId });
+  }, [sendPayload]);
 
   const sendRead = useCallback((lastMessageId: number) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ action: "read", last_message_id: lastMessageId }));
-  }, []);
+    sendPayload({ action: "read", last_message_id: lastMessageId });
+  }, [sendPayload]);
 
   const startTyping = useCallback(() => {
     if (!isTypingRef.current) {
@@ -190,5 +276,5 @@ export function useWebSocket(roomName: string | null) {
     }, 3000);
   }, [sendTyping]);
 
-  return { sendMessage, startTyping, editMessage, toggleReaction, sendAiRequest, togglePin, sendRead };
+  return { sendMessage, startTyping, editMessage, deleteMessage, toggleReaction, sendAiRequest, togglePin, sendRead };
 }

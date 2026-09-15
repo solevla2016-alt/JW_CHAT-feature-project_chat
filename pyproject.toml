@@ -30,6 +30,8 @@ ruff = "^0.5"
 pre-commit = "^3.7"
 pytest = "^8.2"
 pytest-django = "^4.8"
+pytest-asyncio = "^1.4"
+pytest-cov = "^7.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -41,8 +43,40 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "S", "B", "A", "C4", "PT", "RUF"]
-ignore = ["E501"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests.py" = ["S101"]
+"conftest.py" = ["S101", "S106"]
+"*/migrations/*" = ["RUF012"]
+"users/models.py" = ["RUF012"]
+"chat/models.py" = ["RUF012"]
+"config/settings.py" = ["E402"]
+"chat/speech_service.py" = ["S110"]
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings"
+DJANGO_SETTINGS_MODULE = "config.test_settings"
 python_files = ["tests.py", "test_*.py"]
+asyncio_mode = "auto"
+testpaths = ["chat", "users"]
+addopts = "--cov --cov-report=term-missing --cov-config=pyproject.toml"
+
+[tool.coverage.run]
+source = ["chat", "users"]
+branch = true
+omit = [
+    "*/migrations/*",
+    "*/tests.py",
+    "*/test_*",
+    "chat/apps.py",
+    "users/apps.py",
+    "chat/admin.py",
+    "users/admin.py",
+    "chat/routing.py",
+    "chat/speech_service.py",
+]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = true

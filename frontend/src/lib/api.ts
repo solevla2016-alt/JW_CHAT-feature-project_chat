@@ -82,6 +82,32 @@ export function mediaUrl(path: string): string {
   return `${MEDIA_BASE}${path}`;
 }
 
+export async function deleteMessageApi(roomId: number, messageId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/chat/rooms/${roomId}/messages/${messageId}/`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.error ?? error.message ?? "Ошибка удаления сообщения");
+  }
+}
+
+export async function getRoomBans<T>(roomId: number): Promise<T> {
+  return apiFetch<T>(`/chat/rooms/${roomId}/bans/`);
+}
+
+export async function banUserApi<T>(roomId: number, username: string, reason = ""): Promise<T> {
+  return apiFetch<T>(`/chat/rooms/${roomId}/bans/`, {
+    method: "POST",
+    body: JSON.stringify({ username, reason }),
+  });
+}
+
+export async function unbanUserApi<T>(roomId: number, userId: number): Promise<T> {
+  return apiFetch<T>(`/chat/rooms/${roomId}/bans/${userId}/`, { method: "DELETE" });
+}
+
 export async function searchMessages<T>(roomId: number, q: string): Promise<T> {
   const res = await fetch(
     `${API_BASE}/chat/rooms/${roomId}/search/?q=${encodeURIComponent(q)}`,

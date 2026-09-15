@@ -2,10 +2,11 @@
 fallback на локальную базу знаний при ошибке или отсутствии ключа.
 """
 
+import asyncio
+import sys
 from typing import Any
 
 import httpx
-
 from django.conf import settings
 
 from . import ai_local
@@ -52,14 +53,33 @@ async def ask_openrouter(prompt: str, history: list[dict[str, Any]]) -> str | No
         "temperature": 0.7,
     }
 
+    resp = None
     try:
         async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            return content.strip() if content else None
-    except Exception:
+            models = [settings.OPENROUTER_MODEL, "google/gemma-4-31b-it:free", "inclusionai/ling-3.0-flash-vl:free"]
+            for model in models:
+                payload["model"] = model
+                for attempt in range(2):
+                    resp = await client.post(url, json=payload, headers=headers)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("choices"):
+                            content = data["choices"][0]["message"]["content"]
+                            return content.strip() if content else None
+                        # 200, но без choices — обычно сообщение об ошибке/перегрузке
+                        err = data.get("error", {}).get("message") or data
+                        print(f"[AI] no choices ({model}, attempt {attempt + 1}): {str(err)[:160]}", file=sys.stderr)
+                    else:
+                        print(f"[AI] HTTP {resp.status_code} ({model}): {resp.text[:160]}", file=sys.stderr)
+                    await asyncio.sleep(1.5)
+        return None
+    except Exception as exc:
+        print(f"[AI] OpenRouter error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        if resp is not None:
+            try:
+                print(f"[AI] raw body: {resp.text[:200]}", file=sys.stderr)
+            except Exception:  # noqa: S110
+                pass
         return None
 
 

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from typing import Any
@@ -5,12 +6,12 @@ from typing import Any
 import redis.asyncio as aioredis
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
 
 from .ai_service import build_history, get_ai_answer
 from .models import ChatRoom, Message, Reaction, ReadStatus
+from .permissions import can_delete_message, is_banned
 from .validators import validate_message
 
 User = get_user_model()
@@ -20,6 +21,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
     """WebSocket consumer для чата JOIN WORK!."""
 
     redis_pool: aioredis.Redis | None = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ai_tasks: set[asyncio.Task] = set()
 
     @classmethod
     async def _get_redis(cls) -> aioredis.Redis:
@@ -38,9 +43,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def user_key(self) -> str:
         return f"presence:user_{self.scope['user'].id}"
 
+    @property
+    def screen_key(self) -> str:
+        return f"screen:chat_{self.room.id}"
+
     async def connect(self) -> None:
         user = self.scope["user"]
         if user.is_anonymous:
+            print("[WS] close: anonymous", flush=True)
             await self.close()
             return
 
@@ -48,12 +58,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.room = await self._get_room(self.room_name)
 
         if self.room is None:
+            print(f"[WS] close: room not found: {self.room_name!r}", flush=True)
             await self.close()
             return
 
         if not await self._has_access(user):
+            print(f"[WS] close: access denied: {user.username} room={self.room.name!r}", flush=True)
             await self.close()
             return
+
+        print(f"[WS] open: {user.username} room={self.room.name!r}", flush=True)
 
         self.room_group_name = f"chat_{self.room.id}"
 
@@ -63,7 +77,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         redis = await self._get_redis()
         await redis.sadd(self.presence_key, self.channel_name)
         await redis.sadd(self.user_key, self.channel_name)
-        await redis.set(f"presence:chan:{self.channel_name}", user.username)
+        await redis.setex(f"presence:chan:{self.channel_name}", 300, user.username)
 
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -107,6 +121,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
+        redis = await self._get_redis()
+        if await redis.get(self.screen_key) == self.channel_name:
+            await redis.delete(self.screen_key)
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {"type": "screen_stop"},
+            )
+
     async def receive(self, text_data: str | None = None, bytes_data: bytes | None = None) -> None:
         if text_data is None:
             return
@@ -119,12 +141,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         action = data.get("action", "message")
 
+        redis = await self._get_redis()
+        await redis.expire(f"presence:chan:{self.channel_name}", 300)
+
         if action == "message":
             await self._handle_message(data)
         elif action == "typing":
             await self._handle_typing(data)
         elif action == "edit":
             await self._handle_edit(data)
+        elif action == "delete":
+            await self._handle_delete_message(data)
         elif action == "read":
             await self._handle_read(data)
         elif action == "reaction":
@@ -133,15 +160,29 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self._handle_ai_request(data)
         elif action == "pin":
             await self._handle_pin(data)
+        elif action == "screen_share_start":
+            await self._handle_screen_share_start()
+        elif action == "screen_share_stop":
+            await self._handle_screen_share_stop()
+        elif action in ("webrtc_offer", "webrtc_answer", "webrtc_candidate"):
+            await self._handle_signal(data, action)
 
     async def _handle_message(self, data: dict[str, Any]) -> None:
         message_text, error = validate_message(json.dumps(data))
         if error:
-            await self._send_error(error)
-            return
+            has_attachment = data.get("attachment_type", "none") != "none"
+            if has_attachment:
+                message_text = data.get("attachment_name", "") or ""
+            else:
+                await self._send_error(error)
+                return
 
         user = self.scope["user"]
         reply_to_id = data.get("reply_to_id")
+
+        if await self._is_banned_user(user):
+            await self._send_error("Вы забанены в этой комнате")
+            return
 
         if not await self._can_dm(user, self.room):
             return
@@ -193,6 +234,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 "transcription": message.transcription,
             },
         )
+
+        if (
+            message.attachment_type == "none"
+            and self.room.room_type == "direct"
+            and user.username != settings.AI_ASSISTANT_USERNAME
+            and message_text
+            and await self._room_has_ai()
+        ):
+            ai_task = asyncio.create_task(self._generate_ai_reply(message_text))
+            self._ai_tasks.add(ai_task)
+            ai_task.add_done_callback(self._ai_tasks.discard)
 
     async def _handle_typing(self, data: dict[str, Any]) -> None:
         user = self.scope["user"]
@@ -274,6 +326,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self._send_error("Укажите вопрос для AI")
             return
 
+        await self._generate_ai_reply(prompt)
+
+    async def _generate_ai_reply(self, prompt: str) -> None:
         # Показываем индикатор "AI печатает"
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -281,14 +336,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
 
         try:
-            history_msgs = await self._get_recent_messages(self.room.id, settings.AI_CONTEXT_MESSAGES)
-            history = build_history(history_msgs)
+            history = await self._get_recent_messages(self.room.id, settings.AI_CONTEXT_MESSAGES)
+            history = build_history(history)
             answer = await get_ai_answer(prompt, history)
         finally:
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {"type": "ai_typing", "is_typing": False},
             )
+
+        if not answer:
+            return
 
         ai_user = await self._get_ai_user()
         message = await self._create_message(
@@ -313,6 +371,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 "attachment_url": None,
                 "attachment_name": "",
                 "duration": None,
+                "is_ai": True,
             },
         )
 
@@ -335,6 +394,28 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 "id": message_id,
                 "pinned": pinned,
                 "pinned_by": user.username,
+            },
+        )
+
+    async def _handle_delete_message(self, data: dict[str, Any]) -> None:
+        message_id = data.get("message_id")
+        if not message_id:
+            await self._send_error("message_id обязателен")
+            return
+
+        deleted = await self._delete_message(message_id)
+        if deleted is None:
+            await self._send_error("Сообщение не найдено")
+            return
+        if deleted is False:
+            await self._send_error("Недостаточно прав")
+            return
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "message_deleted",
+                "id": message_id,
             },
         )
 
@@ -431,6 +512,77 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "pinned_by": event.get("pinned_by"),
         }))
 
+    async def message_deleted(self, event: dict[str, Any]) -> None:
+        await self.send(text_data=json.dumps({
+            "type": "message_deleted",
+            "id": event["id"],
+        }))
+
+    # --- Screen share / WebRTC signaling ---
+
+    async def _handle_screen_share_start(self) -> None:
+        redis = await self._get_redis()
+        await redis.set(self.screen_key, self.channel_name)
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "screen_start",
+                "broadcaster": self.scope["user"].username,
+                "from_channel": self.channel_name,
+            },
+        )
+
+    async def _handle_screen_share_stop(self) -> None:
+        redis = await self._get_redis()
+        await redis.delete(self.screen_key)
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {"type": "screen_stop"},
+        )
+
+    async def _handle_signal(self, data: dict[str, Any], signal_type: str) -> None:
+        target = (data.get("target") or "").strip()
+        if not target:
+            await self._send_error("Укажите получателя сигнала (target)")
+            return
+
+        target_id = await self._get_user_id(target)
+        if target_id is None:
+            await self._send_error("Получатель не найден")
+            return
+
+        redis = await self._get_redis()
+        channels = await redis.smembers(f"presence:user_{target_id}")
+
+        payload = {
+            "type": "signal",
+            "signal_type": signal_type,
+            "from": self.scope["user"].username,
+            "sdp": data.get("sdp"),
+            "candidate": data.get("candidate"),
+        }
+        for channel in channels:
+            await self.channel_layer.send(channel, {"type": "signal_relay", "payload": payload})
+
+    @database_sync_to_async
+    def _get_user_id(self, username: str) -> int | None:
+        user = User.objects.filter(username=username).only("id").first()
+        return user.id if user else None
+
+    async def screen_start(self, event: dict[str, Any]) -> None:
+        if event.get("from_channel") == self.channel_name:
+            return
+        await self.send(text_data=json.dumps({
+            "type": "screen_start",
+            "broadcaster": event["broadcaster"],
+        }))
+
+    async def screen_stop(self, event: dict[str, Any]) -> None:
+        await self.send(text_data=json.dumps({"type": "screen_stop"}))
+
+    async def signal_relay(self, event: dict[str, Any]) -> None:
+        await self.send(text_data=json.dumps(event["payload"]))
+
     # --- Helpers ---
 
     async def _send_history(self) -> None:
@@ -485,11 +637,27 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _has_access(self, user) -> bool:
+        if is_banned(self.room, user):
+            return False
         if self.room.owner_id == user.id:
             return True
         if not self.room.is_private:
             return True
         return self.room.members.filter(id=user.id).exists()
+
+    @database_sync_to_async
+    def _is_banned_user(self, user) -> bool:
+        return is_banned(self.room, user)
+
+    @database_sync_to_async
+    def _delete_message(self, message_id: int) -> bool | None:
+        message = Message.objects.filter(id=message_id, room_id=self.room.id).first()
+        if message is None:
+            return None
+        if not can_delete_message(self.scope["user"], message):
+            return False
+        message.delete()
+        return True
 
     @database_sync_to_async
     def _create_message(
@@ -576,6 +744,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 return False
         return True
 
+    @database_sync_to_async
+    def _room_has_ai(self) -> bool:
+        return self.room.members.filter(username=settings.AI_ASSISTANT_USERNAME).exists()
+
     def _validate_reply(self, reply_to_id: int) -> bool:
         return Message.objects.filter(id=reply_to_id, room_id=self.room.id).exists()
 
@@ -656,10 +828,28 @@ class ChatConsumer(AsyncWebsocketConsumer):
             username = await redis.get(f"presence:chan:{channel}")
             if username:
                 usernames.append(username)
+        users = await self._online_users_with_avatar(usernames)
         await self.channel_layer.group_send(
             self.room_group_name,
-            {"type": "online_users", "users": sorted(set(usernames))},
+            {"type": "online_users", "users": users},
         )
+
+    @database_sync_to_async
+    def _online_users_with_avatar(self, usernames: list[str]) -> list[dict[str, object]]:
+        if not usernames:
+            return []
+        from users.models import User
+
+        qs = User.objects.filter(username__in=usernames).only("username", "avatar")
+        avatar_map = {
+            u.username: u.avatar.url if u.avatar else None
+            for u in qs
+        }
+        return [
+            {"username": u, "avatar": avatar_map.get(u)}
+            for u in sorted(set(usernames))
+            if u in avatar_map
+        ]
 
     @database_sync_to_async
     def _mark_offline(self, user_id: int) -> None:

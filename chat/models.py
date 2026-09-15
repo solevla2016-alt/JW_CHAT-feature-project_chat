@@ -5,7 +5,7 @@ from django.db import models
 
 
 class Server(models.Model):
-    """Сервер (сообщество) — верхний уровень организации, как в Discord."""
+    """Сервер (сообщество) — верхний уровень организации."""
 
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, default="")
@@ -80,6 +80,50 @@ class ChatRoom(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+class RoomBan(models.Model):
+    """Бан пользователя в комнате."""
+
+    room = models.ForeignKey(
+        ChatRoom,
+        on_delete=models.CASCADE,
+        related_name="bans",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="room_bans",
+    )
+    banned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="bans_issued",
+    )
+    reason = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Ограничение по времени (None — бан бессрочный)",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["room", "user"], name="unique_room_user_ban"),
+        ]
+
+    @property
+    def is_active(self) -> bool:
+        from django.utils import timezone
+
+        if self.expires_at is None:
+            return True
+        return self.expires_at > timezone.now()
+
+    def __str__(self) -> str:
+        return f"{self.user.username} banned in {self.room.name}"
 
 
 class Message(models.Model):

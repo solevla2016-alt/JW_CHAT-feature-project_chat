@@ -6,6 +6,7 @@ export interface User {
   status: string;
   birth_date?: string | null;
   message_privacy?: "everyone" | "contacts" | "nobody";
+  role?: "member" | "moderator" | "admin";
 }
 
 export interface ReplyTo {
@@ -41,6 +42,17 @@ export interface ChatRoomMember {
   id: number;
   username: string;
   avatar: string | null;
+  role?: "member" | "moderator" | "admin";
+}
+
+export interface RoomBan {
+  username: string;
+  user_id: number;
+  banned_by: string;
+  reason: string;
+  created_at: string;
+  expires_at: string | null;
+  is_active: boolean;
 }
 
 export interface Server {
@@ -79,6 +91,11 @@ export interface TypingUser {
   timeout: ReturnType<typeof setTimeout>;
 }
 
+export interface OnlineUser {
+  username: string;
+  avatar: string | null;
+}
+
 export interface WebSocketMessage {
   type: string;
   id?: number;
@@ -101,8 +118,13 @@ export interface WebSocketMessage {
   pinned_by?: string;
   transcription?: string;
   action?: string;
-  users?: string[];
+  users?: OnlineUser[];
   messages?: Message[];
   error?: string;
   updated_at?: string;
+  broadcaster?: string;
+  from?: string;
+  sdp?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+  signal_type?: string;
 }

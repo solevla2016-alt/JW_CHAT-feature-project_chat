@@ -1,7 +1,6 @@
-from rest_framework import permissions, serializers
-from rest_framework.request import Request
+from rest_framework import serializers
 
-from .models import ChatRoom, Message, Reaction, ReadStatus, Server
+from .models import ChatRoom, Message, ReadStatus, Server
 
 
 class ServerSerializer(serializers.ModelSerializer):
@@ -70,6 +69,7 @@ class ChatRoomSerializer(serializers.ModelSerializer):
                 "id": u.id,
                 "username": u.username,
                 "avatar": u.avatar.url if u.avatar else None,
+                "role": u.role,
             }
             for u in users
         ]
@@ -78,6 +78,7 @@ class ChatRoomSerializer(serializers.ModelSerializer):
                 "id": obj.owner.id,
                 "username": obj.owner.username,
                 "avatar": obj.owner.avatar.url if obj.owner.avatar else None,
+                "role": obj.owner.role,
             })
         return result
 
@@ -123,21 +124,21 @@ class ChatRoomCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data: dict) -> ChatRoom:
         from django.contrib.auth import get_user_model
 
-        User = get_user_model()
+        user_model = get_user_model()
         request = self.context["request"]
         server = validated_data.pop("server", None)
 
         room_type = validated_data.get("room_type")
 
         if room_type == ChatRoom.RoomType.DIRECT:
-            other = User.objects.filter(username__iexact=validated_data.get("name", "")).first()
+            other = user_model.objects.filter(username__iexact=validated_data.get("name", "")).first()
             if other and other.id != request.user.id and other.username != "AI Assistant":
                 privacy = other.message_privacy
-                if privacy == User.MessagePrivacy.NOBODY:
+                if privacy == user_model.MessagePrivacy.NOBODY:
                     raise serializers.ValidationError(
                         {"direct": f"{other.username} запретил(а) личные сообщения"}
                     )
-                if privacy == User.MessagePrivacy.CONTACTS:
+                if privacy == user_model.MessagePrivacy.CONTACTS:
                     has_dm = ChatRoom.objects.filter(
                         room_type=ChatRoom.RoomType.DIRECT,
                         members=request.user,
@@ -155,6 +156,8 @@ class ChatRoomCreateSerializer(serializers.ModelSerializer):
         room.members.add(request.user)
         if room_type == ChatRoom.RoomType.DIRECT and other:
             room.members.add(other)
+        elif server is not None:
+            room.members.add(*server.members.all())
         return room
 
 

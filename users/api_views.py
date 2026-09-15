@@ -2,7 +2,11 @@ from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import permissions, status
 from rest_framework.authentication import SessionAuthentication
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -87,8 +91,21 @@ def me_view(request: Request) -> Response:
 
 @api_view(["GET"])
 def users_list_view(request: Request) -> Response:
-    users = User.objects.exclude(id=request.user.id).values("id", "username", "avatar", "status")[:100]
-    return Response(list(users))
+    users = (
+        User.objects.exclude(id=request.user.id)
+        .only("id", "username", "avatar", "status")[:100]
+    )
+    return Response(
+        [
+            {
+                "id": u.id,
+                "username": u.username,
+                "avatar": u.avatar.url if u.avatar else None,
+                "status": u.status,
+            }
+            for u in users
+        ]
+    )
 
 
 @csrf_exempt
@@ -160,4 +177,29 @@ def _user_data(user: User) -> dict:
         "status": user.status,
         "birth_date": user.birth_date.isoformat() if user.birth_date else None,
         "message_privacy": user.message_privacy,
+        "role": user.role,
     }
+
+
+@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([permissions.IsAdminUser])
+def set_role_view(request: Request) -> Response:
+    username = request.data.get("username", "").strip()
+    role = request.data.get("role", "").strip()
+
+    if role not in dict(User.Role.choices):
+        return Response({"error": "Некорректная роль"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(username__iexact=username)
+    except User.DoesNotExist:
+        return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
+
+    if user.role == role:
+        return Response(_user_data(user))
+
+    user.role = role
+    user.save(update_fields=["role"])
+    return Response(_user_data(user))

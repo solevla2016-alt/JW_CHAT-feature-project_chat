@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { ChatRoom, Message, ReactionItem, Server, User, TypingUser } from "./types";
+import type { ChatRoom, ChatRoomMember, Message, OnlineUser, ReactionItem, Server, User, TypingUser } from "./types";
 
 interface ChatState {
   user: User | null;
@@ -10,21 +10,24 @@ interface ChatState {
   activeServer: Server | null;
   activeRoom: ChatRoom | null;
   messages: Message[];
-  onlineUsers: string[];
+  onlineUsers: OnlineUser[];
   typingUsers: TypingUser[];
   sidebarOpen: boolean;
   aiTyping: boolean;
+  screenSession: ScreenSession | null;
 
   setUser: (user: User | null) => void;
   setRooms: (rooms: ChatRoom[]) => void;
   setServers: (servers: Server[]) => void;
   setActiveServer: (server: Server | null) => void;
   setActiveRoom: (room: ChatRoom | null) => void;
+  setRoomMembers: (roomId: number, members: ChatRoomMember[]) => void;
   setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
+  removeMessage: (id: number) => void;
   updateMessage: (id: number, text: string, updatedAt: string) => void;
   setMessageReactions: (id: number, reactions: ReactionItem[]) => void;
-  setOnlineUsers: (users: string[]) => void;
+  setOnlineUsers: (users: OnlineUser[]) => void;
   setTypingUsers: (users: TypingUser[]) => void;
   addTypingUser: (username: string) => void;
   removeTypingUser: (username: string) => void;
@@ -34,6 +37,12 @@ interface ChatState {
   resetRoomUnread: (roomId: number) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
+  setScreenSession: (session: ScreenSession | null) => void;
+}
+
+export interface ScreenSession {
+  roomId: number;
+  broadcaster: string;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -47,18 +56,29 @@ export const useChatStore = create<ChatState>((set) => ({
   typingUsers: [],
   sidebarOpen: true,
   aiTyping: false,
+  screenSession: null,
 
   setUser: (user) => set({ user }),
   setRooms: (rooms) => set({ rooms }),
   setServers: (servers) => set({ servers }),
   setActiveServer: (server) => set({ activeServer: server, activeRoom: null, messages: [] }),
-  setActiveRoom: (room) => set({ activeRoom: room, messages: [], typingUsers: [] }),
+  setActiveRoom: (room) => set({ activeRoom: room, messages: [], typingUsers: [], screenSession: null }),
+  setRoomMembers: (roomId, members) =>
+    set((state) => ({
+      rooms: state.rooms.map((r) => (r.id === roomId ? { ...r, members } : r)),
+      activeRoom:
+        state.activeRoom?.id === roomId ? { ...state.activeRoom, members } : state.activeRoom,
+    })),
   setMessages: (messages) => set({ messages }),
   addMessage: (message) =>
     set((state) => ({
       messages: state.messages.some((m) => m.id === message.id)
         ? state.messages
         : [...state.messages, message],
+    })),
+  removeMessage: (id) =>
+    set((state) => ({
+      messages: state.messages.filter((m) => m.id !== id),
     })),
   updateMessage: (id, text, updatedAt) =>
     set((state) => ({
@@ -112,4 +132,5 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  setScreenSession: (session) => set({ screenSession: session }),
 }));

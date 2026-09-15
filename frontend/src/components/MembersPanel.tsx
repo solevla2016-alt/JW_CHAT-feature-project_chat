@@ -1,25 +1,80 @@
 "use client";
 
-import { X, Crown } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Ban, Crown, ShieldBan, Unlock, X } from "lucide-react";
 import { useChatStore } from "@/lib/store";
-import { mediaUrl } from "@/lib/api";
+import { banUserApi, getRoomBans, mediaUrl, unbanUserApi } from "@/lib/api";
+import type { RoomBan } from "@/lib/types";
 
 export function MembersPanel({ onClose }: { onClose: () => void }) {
   const activeRoom = useChatStore((s) => s.activeRoom);
   const onlineUsers = useChatStore((s) => s.onlineUsers);
   const user = useChatStore((s) => s.user);
+  const setRoomMembers = useChatStore((s) => s.setRoomMembers);
+  const [bans, setBans] = useState<RoomBan[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const canModerate =
+    !!activeRoom &&
+    !!user &&
+    (user.role === "admin" ||
+      user.role === "moderator" ||
+      activeRoom.owner === user.username);
+
+  const refreshBans = useCallback(async () => {
+    if (!activeRoom) return;
+    try {
+      setBans(await getRoomBans<RoomBan[]>(activeRoom.id));
+    } catch {
+      // ignore
+    }
+  }, [activeRoom]);
+
+  useEffect(() => {
+    void refreshBans();
+  }, [refreshBans]);
 
   if (!activeRoom) return null;
 
   const members = activeRoom.members ?? [];
   // сортировка: сначала онлайн, потом остальные
   const sorted = [...members].sort((a, b) => {
-    const aOnline = onlineUsers.includes(a.username) ? 0 : 1;
-    const bOnline = onlineUsers.includes(b.username) ? 0 : 1;
+    const aOnline = onlineUsers.some((u) => u.username === a.username) ? 0 : 1;
+    const bOnline = onlineUsers.some((u) => u.username === b.username) ? 0 : 1;
     return aOnline - bOnline;
   });
 
-  const onlineCount = members.filter((m) => onlineUsers.includes(m.username)).length;
+  const onlineCount = members.filter((m) => onlineUsers.some((u) => u.username === m.username)).length;
+
+  const handleBan = async (username: string) => {
+    if (!activeRoom || !window.confirm(`Заблокировать ${username} в этой комнате?`)) return;
+    setLoading(true);
+    try {
+      await banUserApi(activeRoom.id, username);
+      setRoomMembers(
+        activeRoom.id,
+        members.filter((m) => m.username !== username)
+      );
+      await refreshBans();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Не удалось заблокировать пользователя");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUnban = async (ban: RoomBan) => {
+    if (!activeRoom) return;
+    setLoading(true);
+    try {
+      await unbanUserApi(activeRoom.id, ban.user_id);
+      await refreshBans();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Не удалось разблокировать пользователя");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="flex h-full w-64 flex-col border-l border-[var(--border-color)] bg-[var(--bg-primary)]">
@@ -41,7 +96,7 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
 
       <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-3">
         {sorted.map((m) => {
-          const isOnline = onlineUsers.includes(m.username);
+          const isOnline = onlineUsers.some((u) => u.username === m.username);
           const isOwner = m.username === activeRoom.owner;
           const isSelf = m.username === user?.username;
           return (
@@ -51,7 +106,6 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
             >
               <div className="relative shrink-0">
                 {m.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={mediaUrl(m.avatar)}
                     alt={m.username}
@@ -73,7 +127,12 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
                   {m.username}
                   {isSelf && <span className="text-xs text-[var(--text-muted)]">(вы)</span>}
                 </div>
-                <div className="truncate text-xs text-[var(--text-secondary)]">
+                <div className="flex items-center gap-1.5 truncate text-xs text-[var(--text-secondary)]">
+                  {m.role && m.role !== "member" && (
+                    <span className="rounded bg-[var(--bg-tertiary)] px-1 py-0.5 text-[10px] uppercase tracking-wide">
+                      {m.role === "admin" ? "Админ" : "Модератор"}
+                    </span>
+                  )}
                   {isOnline ? (
                     <span className="text-emerald-500">в сети</span>
                   ) : (
@@ -81,14 +140,55 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
                   )}
                 </div>
               </div>
-              {isOwner && (
+              {isOwner ? (
                 <span title="Владелец">
                   <Crown size={14} className="shrink-0 text-amber-500" />
                 </span>
+              ) : (
+                canModerate &&
+                !isSelf && (
+                  <button
+                    onClick={() => handleBan(m.username)}
+                    disabled={loading}
+                    className="rounded p-1 text-[var(--text-muted)] hover:text-red-500 disabled:opacity-50"
+                    title="Заблокировать"
+                  >
+                    <Ban size={14} />
+                  </button>
+                )
               )}
             </div>
           );
         })}
+
+        {canModerate && bans.length > 0 && (
+          <div className="mt-3 border-t border-[var(--border-color)] pt-2">
+            <div className="flex items-center gap-1.5 px-2 pb-1 text-xs font-semibold text-[var(--text-secondary)]">
+              <ShieldBan size={12} /> Блокировки
+            </div>
+            {bans.map((b) => (
+              <div
+                key={b.user_id}
+                className="flex items-center gap-2 rounded-xl px-2 py-1.5 text-sm hover:bg-[var(--bg-secondary)]"
+              >
+                <div className="min-w-0 flex-1 truncate">
+                  <span className="font-medium">{b.username}</span>
+                  {b.reason && (
+                    <span className="ml-1 text-xs text-[var(--text-muted)]">— {b.reason}</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleUnban(b)}
+                  disabled={loading}
+                  className="rounded p-1 text-[var(--text-muted)] hover:text-emerald-500 disabled:opacity-50"
+                  title="Разблокировать"
+                >
+                  <Unlock size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

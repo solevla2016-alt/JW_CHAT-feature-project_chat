@@ -1,16 +1,31 @@
+import os
 import uuid
 
 from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import permissions, status
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from users.api_views import CsrfExemptSessionAuthentication
 
-from .models import ChatRoom, Message, Server
+from .models import ChatRoom, Message, RoomBan, Server
+from .permissions import (
+    ban_user,
+    can_ban,
+    can_delete_message,
+    is_admin,
+    is_banned,
+    unban_user,
+)
 from .serializers import (
     ChatRoomCreateSerializer,
     ChatRoomSerializer,
@@ -204,17 +219,18 @@ def room_upload_view(request: Request, room_id: int) -> Response:
     content_type = file.content_type or ""
     attachment_type = ATTACHMENT_MAP.get(content_type, "file")
 
-    msg = Message.objects.create(
-        user=request.user,
-        room=room,
-        text=request.data.get("text", ""),
-        attachment_type=attachment_type,
-        attachment_url=file,
-        attachment_name=file.name,
-    )
+    ext = os.path.splitext(file.name)[1].lower()
+    path = default_storage.save(f"uploads/{uuid.uuid4().hex}{ext}", ContentFile(file.read()))
 
-    serializer = MessageSerializer(msg)
-    return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(
+        {
+            "attachment_url": path,
+            "attachment_name": file.name,
+            "attachment_type": attachment_type,
+            "duration": None,
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["GET"])
@@ -271,3 +287,131 @@ def room_transcribe_view(request: Request, room_id: int) -> Response:
     message.save(update_fields=["transcription"])
 
     return Response({"transcription": text}, status=status.HTTP_200_OK)
+
+
+def _room_for_user(request: Request, room_id: int) -> tuple[ChatRoom | None, Response | None]:
+    try:
+        room = ChatRoom.objects.get(id=room_id)
+    except ChatRoom.DoesNotExist:
+        return None, Response(status=status.HTTP_404_NOT_FOUND)
+    if is_admin(request.user):
+        return room, None
+    if room.owner_id != request.user.id and not room.members.filter(id=request.user.id).exists():
+        return None, Response({"error": "Нет доступа к комнате"}, status=status.HTTP_403_FORBIDDEN)
+    return room, None
+
+
+@api_view(["DELETE"])
+def room_message_delete_view(request: Request, room_id: int, message_id: int) -> Response:
+    room, error = _room_for_user(request, room_id)
+    if error is not None:
+        return error
+
+    try:
+        message = Message.objects.get(id=message_id, room=room)
+    except Message.DoesNotExist:
+        return Response({"error": "Сообщение не найдено"}, status=status.HTTP_404_NOT_FOUND)
+
+    if not can_delete_message(request.user, message):
+        return Response({"error": "Недостаточно прав"}, status=status.HTTP_403_FORBIDDEN)
+
+    message.delete()
+    _broadcast_message_deleted(room, message_id)
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["GET", "POST"])
+def room_ban_view(request: Request, room_id: int) -> Response:
+    room, error = _room_for_user(request, room_id)
+    if error is not None:
+        return error
+
+    from users.models import User
+
+    if request.method == "GET":
+        bans = RoomBan.objects.filter(room=room).select_related("user", "banned_by")
+        return Response(
+            [
+                {
+                    "username": b.user.username,
+                    "user_id": b.user.id,
+                    "banned_by": b.banned_by.username,
+                    "reason": b.reason,
+                    "created_at": b.created_at.isoformat(),
+                    "expires_at": b.expires_at.isoformat() if b.expires_at else None,
+                    "is_active": b.is_active,
+                }
+                for b in bans
+            ]
+        )
+
+    username = (request.data.get("username") or "").strip()
+    if not username:
+        return Response({"error": "username обязателен"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        target = User.objects.get(username__iexact=username)
+    except User.DoesNotExist:
+        return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
+
+    if not can_ban(request.user, room, target):
+        return Response({"error": "Недостаточно прав"}, status=status.HTTP_403_FORBIDDEN)
+
+    reason = (request.data.get("reason") or "").strip()[:300]
+    expires_at = request.data.get("expires_at")
+    if expires_at:
+        from django.utils.dateparse import parse_datetime
+        parsed = parse_datetime(str(expires_at))
+        if parsed is None:
+            return Response({"error": "Некорректный expires_at"}, status=status.HTTP_400_BAD_REQUEST)
+        expires_at = parsed
+
+    ban = ban_user(room, target, request.user, reason=reason, expires_at=expires_at)
+    return Response(
+        {
+            "username": target.username,
+            "banned_by": request.user.username,
+            "reason": ban.reason,
+            "created_at": ban.created_at.isoformat(),
+            "expires_at": ban.expires_at.isoformat() if ban.expires_at else None,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["DELETE"])
+def room_unban_view(request: Request, room_id: int, user_id: int) -> Response:
+    room, error = _room_for_user(request, room_id)
+    if error is not None:
+        return error
+
+    from users.models import User
+
+    try:
+        target = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
+
+    if not can_ban(request.user, room, target):
+        return Response({"error": "Недостаточно прав"}, status=status.HTTP_403_FORBIDDEN)
+
+    if not is_banned(room, target):
+        return Response({"error": "Пользователь не забанен"}, status=status.HTTP_400_BAD_REQUEST)
+
+    unban_user(room, target)
+    return Response({"success": True})
+
+
+def _broadcast_message_deleted(room: ChatRoom, message_id: int) -> None:
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+
+    channel_layer = get_channel_layer()
+    if channel_layer is not None:
+        async_to_sync(channel_layer.group_send)(
+            f"chat_{room.id}",
+            {
+                "type": "message_deleted",
+                "id": message_id,
+            },
+        )

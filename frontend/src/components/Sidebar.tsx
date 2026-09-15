@@ -485,8 +485,12 @@ onClick={async () => {
                           onChange={() => toggleUser(u.id)}
                           className="accent-[var(--brand-primary)]"
                         />
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-[9px] font-bold text-white">
-                          {u.username.slice(0, 2).toUpperCase()}
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-400 to-brand-600">
+                          {u.avatar ? (
+                            <img src={mediaUrl(u.avatar)} alt={u.username} className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="text-[9px] font-bold text-white">{u.username.slice(0, 2).toUpperCase()}</span>
+                          )}
                         </span>
                         <span className="truncate">{u.username}</span>
                       </label>
@@ -502,15 +506,15 @@ onClick={async () => {
           </form>
         )}
 
+        <button
+          onClick={openCreateRoom}
+          className="mx-3 mb-1 flex items-center gap-2 rounded-lg border border-dashed border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
+        >
+          <Plus size={14} />
+          {activeId === "home" ? "Начать разговор" : "Создать канал"}
+        </button>
         {activeId === "home" && (
           <>
-            <button
-              onClick={openCreateRoom}
-              className="mx-3 mb-1 flex items-center gap-2 rounded-lg border border-dashed border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
-            >
-              <Plus size={14} />
-              Начать разговор
-            </button>
             <div className="flex items-center gap-2 px-5 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
               <BookUser size={13} />
               Контакты
@@ -524,13 +528,21 @@ onClick={async () => {
                   className="flex shrink-0 flex-col items-center gap-1"
                 >
                   <div className="relative">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-xs font-bold text-white">
-                      {u.username.slice(0, 2).toUpperCase()}
-                    </div>
+                    {u.avatar ? (
+                      <img
+                        src={mediaUrl(u.avatar)}
+                        alt={u.username}
+                        className="h-11 w-11 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-xs font-bold text-white">
+                        {u.username.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
                     <span
                       className={cn(
                         "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[var(--bg-primary)]",
-                        onlineUsers.includes(u.username) ? "bg-emerald-500" : "bg-gray-400"
+                        onlineUsers.some((x) => x.username === u.username) ? "bg-emerald-500" : "bg-gray-400"
                       )}
                     />
                   </div>
@@ -578,14 +590,22 @@ onClick={async () => {
                 >
                   <div
                     className={cn(
-                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold",
+                      "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl text-sm font-bold",
+                      isDirect && "rounded-full",
                       isDirect
                         ? "bg-gradient-to-br from-pink-400 to-rose-600 text-white"
                         : "bg-gradient-to-br from-brand-400 to-brand-600 text-white"
                     )}
                   >
                     {isDirect ? (
-                      <MessageCircle size={16} />
+                      (() => {
+                        const peer = users.find((u) => u.username === room.name);
+                        return peer?.avatar ? (
+                          <img src={mediaUrl(peer.avatar)} alt={peer.username} className="h-full w-full object-cover" />
+                        ) : (
+                          <MessageCircle size={16} />
+                        );
+                      })()
                     ) : isChannel ? (
                       <span aria-hidden>#</span>
                     ) : (
@@ -627,9 +647,17 @@ onClick={async () => {
             className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--bg-secondary)]"
           >
             <div className="relative">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-xs font-bold text-white">
-                {getInitials(user?.username ?? "JW")}
-              </div>
+              {user?.avatar ? (
+                <img
+                  src={mediaUrl(user.avatar)}
+                  alt={user.username ?? ""}
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-xs font-bold text-white">
+                  {getInitials(user?.username ?? "JW")}
+                </div>
+              )}
               <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[var(--bg-primary)]" />
             </div>
             <div className="min-w-0 flex-1 text-left">

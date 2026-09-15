@@ -16,13 +16,13 @@ try:
     os.environ["PYDUB_FFMPEG_BINARY"] = _FFMPEG_BIN
     from pydub import AudioSegment
     _HAS_PYDUB = True
-except Exception:  # noqa: BLE001
+except Exception:
     pass
 
 try:
     import speech_recognition as sr
     _HAS_SR = True
-except Exception:  # noqa: BLE001
+except Exception:
     _HAS_SR = False
 
 
@@ -46,13 +46,13 @@ def transcribe_audio(file_obj) -> str:
             segment.export(wav_buf, format="wav")
             wav_buf.seek(0)
             audio_data = sr.AudioFile(wav_buf)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Ошибка конвертации аудио: %s", exc)
 
     if audio_data is None:
         try:
             audio_data = sr.AudioFile(io.BytesIO(data))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Не удалось открыть аудио: %s", exc)
             return ""
 
@@ -64,9 +64,9 @@ def transcribe_audio(file_obj) -> str:
         return text
     except sr.UnknownValueError:
         return ""
-    except sr.RequestError as exc:  # noqa: BLE001
+    except sr.RequestError as exc:
         logger.warning("Ошибка Google Speech API: %s", exc)
         return ""
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Ошибка транскрипции: %s", exc)
         return ""
