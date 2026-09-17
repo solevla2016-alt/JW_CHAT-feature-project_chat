@@ -103,6 +103,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
@@ -146,6 +147,14 @@ CSRF_TRUSTED_ORIGINS = os.getenv(
 # Trust proxy headers (Railway/Render) for HTTPS
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Cross-site auth: frontend (Vercel) and backend (Railway/Render) are different domains.
+# SameSite=None + Secure is required so the session cookie survives HTTPS requests and WS handshakes.
+if not DEBUG:
+    SESSION_COOKIE_SAMESITE = "None"
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SAMESITE = "None"
+    CSRF_COOKIE_SECURE = True
 
 # --- AI Assistant (OpenRouter — бесплатный) ---
 AI_ASSISTANT_USERNAME = os.getenv("AI_ASSISTANT_USERNAME", "AI Assistant")

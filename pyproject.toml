@@ -2,7 +2,7 @@
 name = "jw-chat"
 version = "1.0.0"
 description = "JOIN WORK! — Modern Real-Time Chat"
-authors = ["JOIN WORK! Team"]
+authors = ["Olga <solevla2016@gmail.com>"]
 readme = "README.md"
 packages = [{ include = "." }]
 
