@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useChatStore } from "./store";
 import { WS_URL } from "./api";
-import type { Message, WebSocketMessage } from "./types";
+import type { CallMode, Message, WebSocketMessage } from "./types";
 import {
   handleAnswer,
   handleCandidate,
@@ -12,6 +12,18 @@ import {
   handleScreenStop,
   setSignalSender,
 } from "./screenShare";
+import {
+  handleBusy,
+  handleCallAccept,
+  handleCallAnswer,
+  handleCallCancel,
+  handleCallCandidate,
+  handleCallIncoming,
+  handleCallOffer,
+  handleCallReject,
+  handleRemoteHangup,
+  setCallSender,
+} from "./calls";
 
 const WS_BASE = WS_URL;
 
@@ -34,6 +46,7 @@ export function useWebSocket(roomName: string | null) {
     setMessageReactions,
     setAiTyping,
     setMessagePinned,
+    setCall,
   } = useChatStore();
 
   const connect = useCallback(() => {
@@ -56,6 +69,11 @@ export function useWebSocket(roomName: string | null) {
       console.debug("[ws] open", roomName);
       reconnectAttempts.current = 0;
       setSignalSender((msg) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(msg));
+        }
+      });
+      setCallSender((msg) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify(msg));
         }
@@ -181,8 +199,16 @@ export function useWebSocket(roomName: string | null) {
           break;
 
         case "signal": {
-          const { from, sdp, candidate } = data;
-          if (data.signal_type === "webrtc_offer" && from && sdp) {
+          const { from, sdp, candidate, call_id } = data;
+          if (call_id) {
+            if (data.signal_type === "webrtc_offer" && from && sdp) {
+              void handleCallOffer(from, sdp, call_id);
+            } else if (data.signal_type === "webrtc_answer" && from && sdp) {
+              void handleCallAnswer(from, sdp, call_id);
+            } else if (data.signal_type === "webrtc_candidate" && from && candidate) {
+              void handleCallCandidate(from, candidate, call_id);
+            }
+          } else if (data.signal_type === "webrtc_offer" && from && sdp) {
             void handleOffer(from, sdp);
           } else if (data.signal_type === "webrtc_answer" && from && sdp) {
             void handleAnswer(from, sdp);
@@ -191,6 +217,49 @@ export function useWebSocket(roomName: string | null) {
           }
           break;
         }
+
+        case "call_incoming":
+          if (data.call_id && data.from && data.mode) {
+            handleCallIncoming(data.call_id);
+            setCall({
+              id: data.call_id,
+              peer: data.from,
+              mode: data.mode as CallMode,
+              direction: "incoming",
+              phase: "ringing",
+            });
+          }
+          break;
+
+        case "call_accept":
+          if (data.call_id && data.from) {
+            handleCallAccept(data.from, data.call_id);
+          }
+          break;
+
+        case "call_reject":
+          if (data.call_id) {
+            handleCallReject(data.call_id);
+          }
+          break;
+
+        case "call_cancel":
+          if (data.call_id) {
+            handleCallCancel(data.call_id);
+          }
+          break;
+
+        case "call_hangup":
+          if (data.call_id) {
+            handleRemoteHangup(data.call_id);
+          }
+          break;
+
+        case "call_busy":
+          if (data.call_id) {
+            handleBusy(data.call_id);
+          }
+          break;
 
         case "error":
           console.error("WS error:", data.error);
@@ -207,9 +276,9 @@ export function useWebSocket(roomName: string | null) {
     };
 
     ws.onerror = (error) => {
-      console.error("[ws] WebSocket error:", error);
+      console.debug("[ws] WebSocket error:", error);
     };
-  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned]);
+  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned, setCall]);
 
   useEffect(() => {
     connect();

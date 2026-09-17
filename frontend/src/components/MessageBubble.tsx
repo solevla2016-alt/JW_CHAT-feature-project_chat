@@ -213,7 +213,7 @@ export function MessageBubble({
           </div>
         )}
 
-        <div className={cn("relative mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100", isOwn ? "flex-row-reverse" : "")}>
+        <div className={cn("relative mt-1 flex gap-1 md:opacity-0 md:transition-opacity md:group-hover:opacity-100", isOwn ? "flex-row-reverse" : "")}>
           <div className="relative">
             <button
               onClick={() => setPickerOpen((v) => !v)}

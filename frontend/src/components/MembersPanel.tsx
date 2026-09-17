@@ -1,16 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Crown, ShieldBan, Unlock, X } from "lucide-react";
+import { Ban, Crown, Phone, Shield, ShieldBan, Unlock, Video, X } from "lucide-react";
 import { useChatStore } from "@/lib/store";
-import { banUserApi, getRoomBans, mediaUrl, unbanUserApi } from "@/lib/api";
-import type { RoomBan } from "@/lib/types";
+import { banUserApi, getRoomBans, mediaUrl, setRoleApi, unbanUserApi } from "@/lib/api";
+import { startCall } from "@/lib/calls";
+import type { CallMode, RoomBan } from "@/lib/types";
 
 export function MembersPanel({ onClose }: { onClose: () => void }) {
   const activeRoom = useChatStore((s) => s.activeRoom);
   const onlineUsers = useChatStore((s) => s.onlineUsers);
   const user = useChatStore((s) => s.user);
   const setRoomMembers = useChatStore((s) => s.setRoomMembers);
+  const setCall = useChatStore((s) => s.setCall);
+  const setCallLocalStream = useChatStore((s) => s.setCallLocalStream);
   const [bans, setBans] = useState<RoomBan[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -20,6 +23,8 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
     (user.role === "admin" ||
       user.role === "moderator" ||
       activeRoom.owner === user.username);
+
+  const canManageRoles = !!user && (user.is_staff || user.role === "admin");
 
   const refreshBans = useCallback(async () => {
     if (!activeRoom) return;
@@ -46,6 +51,24 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
 
   const onlineCount = members.filter((m) => onlineUsers.some((u) => u.username === m.username)).length;
 
+  const handleStartMemberCall = useCallback(
+    async (username: string, mode: CallMode) => {
+      if (!user) return;
+      const res = await startCall(username, mode, user.username);
+      if (res) {
+        setCallLocalStream(res.stream);
+        setCall({
+          id: res.callId,
+          peer: username,
+          mode,
+          direction: "outgoing",
+          phase: "calling",
+        });
+      }
+    },
+    [user, setCall, setCallLocalStream]
+  );
+
   const handleBan = async (username: string) => {
     if (!activeRoom || !window.confirm(`Заблокировать ${username} в этой комнате?`)) return;
     setLoading(true);
@@ -58,6 +81,22 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
       await refreshBans();
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Не удалось заблокировать пользователя");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePromote = async (username: string) => {
+    if (!activeRoom || !window.confirm(`Назначить ${username} модератором?`)) return;
+    setLoading(true);
+    try {
+      await setRoleApi<{ username: string }>(username, "moderator");
+      setRoomMembers(
+        activeRoom.id,
+        members.map((m) => (m.username === username ? { ...m, role: "moderator" } : m))
+      );
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Не удалось назначить модератора");
     } finally {
       setLoading(false);
     }
@@ -140,6 +179,36 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
                   )}
                 </div>
               </div>
+              {isOnline && !isSelf && (
+                <button
+                  onClick={() => handleStartMemberCall(m.username, "audio")}
+                  disabled={loading}
+                  className="rounded p-1 text-[var(--text-muted)] hover:text-emerald-500 disabled:opacity-50"
+                  title={`Позвонить ${m.username}`}
+                >
+                  <Phone size={14} />
+                </button>
+              )}
+              {isOnline && !isSelf && (
+                <button
+                  onClick={() => handleStartMemberCall(m.username, "video")}
+                  disabled={loading}
+                  className="rounded p-1 text-[var(--text-muted)] hover:text-brand-400 disabled:opacity-50"
+                  title={`Видеозвонок ${m.username}`}
+                >
+                  <Video size={14} />
+                </button>
+              )}
+              {canManageRoles && !isSelf && m.role !== "moderator" && m.role !== "admin" && (
+                <button
+                  onClick={() => handlePromote(m.username)}
+                  disabled={loading}
+                  className="rounded p-1 text-[var(--text-muted)] hover:text-amber-500 disabled:opacity-50"
+                  title={`Назначить ${m.username} модератором`}
+                >
+                  <Shield size={14} />
+                </button>
+              )}
               {isOwner ? (
                 <span title="Владелец">
                   <Crown size={14} className="shrink-0 text-amber-500" />

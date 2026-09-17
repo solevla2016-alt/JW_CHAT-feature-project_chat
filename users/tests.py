@@ -169,7 +169,7 @@ class TestSetRoleApi:
         user.refresh_from_db()
         assert user.role == "moderator"
 
-    def test_non_staff_forbidden(self, api_client, user, member):
+    def test_member_forbidden(self, api_client, user, member):
         api_client.force_authenticate(user=user)
         resp = api_client.post(
             SET_ROLE_URL,
@@ -177,6 +177,17 @@ class TestSetRoleApi:
             format="json",
         )
         assert resp.status_code == 403
+
+    def test_app_admin_can_promote_moderator(self, api_client, admin, user):
+        api_client.force_authenticate(user=admin)
+        resp = api_client.post(
+            SET_ROLE_URL,
+            {"username": user.username, "role": "moderator"},
+            format="json",
+        )
+        assert resp.status_code == 200
+        user.refresh_from_db()
+        assert user.role == "moderator"
 
     def test_invalid_role(self, api_client, superuser, user):
         api_client.force_authenticate(user=superuser)

@@ -1,7 +1,17 @@
 "use client";
 
 import { create } from "zustand";
-import type { ChatRoom, ChatRoomMember, Message, OnlineUser, ReactionItem, Server, User, TypingUser } from "./types";
+import type {
+  CallState,
+  ChatRoom,
+  ChatRoomMember,
+  Message,
+  OnlineUser,
+  ReactionItem,
+  Server,
+  User,
+  TypingUser,
+} from "./types";
 
 interface ChatState {
   user: User | null;
@@ -15,6 +25,9 @@ interface ChatState {
   sidebarOpen: boolean;
   aiTyping: boolean;
   screenSession: ScreenSession | null;
+  call: CallState | null;
+  callLocalStream: MediaStream | null;
+  callRemoteStream: MediaStream | null;
 
   setUser: (user: User | null) => void;
   setRooms: (rooms: ChatRoom[]) => void;
@@ -38,6 +51,9 @@ interface ChatState {
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setScreenSession: (session: ScreenSession | null) => void;
+  setCall: (call: CallState | null) => void;
+  setCallLocalStream: (stream: MediaStream | null) => void;
+  setCallRemoteStream: (stream: MediaStream | null) => void;
 }
 
 export interface ScreenSession {
@@ -54,9 +70,13 @@ export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   onlineUsers: [],
   typingUsers: [],
-  sidebarOpen: true,
+  sidebarOpen:
+    typeof window === "undefined" ? true : window.innerWidth >= 768,
   aiTyping: false,
   screenSession: null,
+  call: null,
+  callLocalStream: null,
+  callRemoteStream: null,
 
   setUser: (user) => set({ user }),
   setRooms: (rooms) => set({ rooms }),
@@ -133,4 +153,7 @@ export const useChatStore = create<ChatState>((set) => ({
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setScreenSession: (session) => set({ screenSession: session }),
+  setCall: (call) => set({ call }),
+  setCallLocalStream: (stream) => set({ callLocalStream: stream }),
+  setCallRemoteStream: (stream) => set({ callRemoteStream: stream }),
 }));

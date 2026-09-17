@@ -14,6 +14,7 @@ from rest_framework import status
 
 from chat import permissions
 from chat.ai_service import ask_openrouter, build_history, get_ai_answer
+from chat.consumers import ChatConsumer
 from chat.models import ChatRoom, Message, Reaction, RoomBan, Server
 from chat.serializers import ChatRoomSerializer, MessageSerializer
 from chat.validators import validate_message
@@ -287,6 +288,12 @@ class TestAiService:
         result = await get_ai_answer("абракадабра", [])
         assert "ментор" in result
 
+    async def test_local_matching_prefers_specific_topic(self, settings):
+        settings.OPENROUTER_API_KEY = ""
+        result = await get_ai_answer("как сделать сортировку в python?", [])
+        assert "сортировк" in result.lower()
+        assert "декоратор" not in result.lower()
+
     async def test_ask_openrouter_no_key(self, settings):
         settings.OPENROUTER_API_KEY = ""
         result = await ask_openrouter("test", [])
@@ -483,6 +490,138 @@ class TestModerationWs:
         assert payload["from"] == owner.username
         await owner_client.disconnect()
         await member_client.disconnect()
+
+    async def test_call_start_relays_incoming(self, group_room, owner, member, ws_connect):
+        owner_client, _ = await ws_connect(owner, group_room.name)
+        member_client, _ = await ws_connect(member, group_room.name)
+        await _drain_until(owner_client, "history")
+        await _drain_until(member_client, "history")
+        await owner_client.send_json_to({
+            "action": "call_start",
+            "target": member.username,
+            "call_id": "call-1",
+            "mode": "audio",
+        })
+        payload = await _drain_until(member_client, "call_incoming", timeout=3)
+        assert payload["call_id"] == "call-1"
+        assert payload["from"] == owner.username
+        assert payload["mode"] == "audio"
+        await owner_client.disconnect()
+        await member_client.disconnect()
+
+    async def test_call_accept_then_hangup(self, group_room, owner, member, ws_connect, fake_redis):
+        owner_client, _ = await ws_connect(owner, group_room.name)
+        member_client, _ = await ws_connect(member, group_room.name)
+        await _drain_until(owner_client, "history")
+        await _drain_until(member_client, "history")
+        await owner_client.send_json_to({
+            "action": "call_start", "target": member.username, "call_id": "call-2", "mode": "video",
+        })
+        await _drain_until(member_client, "call_incoming", timeout=3)
+        await member_client.send_json_to({
+            "action": "call_accept", "target": owner.username, "call_id": "call-2",
+        })
+        accepted = await _drain_until(owner_client, "call_accept", timeout=3)
+        assert accepted["from"] == member.username
+        assert "call-2" in await fake_redis.smembers(f"call:user:{member.id}")
+        await owner_client.send_json_to({
+            "action": "call_hangup", "target": member.username, "call_id": "call-2",
+        })
+        hung = await _drain_until(member_client, "call_hangup", timeout=3)
+        assert hung["call_id"] == "call-2"
+        assert await fake_redis.smembers(f"call:act:{group_room.id}") == set()
+        assert await fake_redis.smembers(f"call:user:{member.id}") == set()
+        await owner_client.disconnect()
+        await member_client.disconnect()
+
+    async def test_call_busy_when_target_in_call(self, group_room, owner, member, moderator, ws_connect):
+        owner_client, _ = await ws_connect(owner, group_room.name)
+        member_client, _ = await ws_connect(member, group_room.name)
+        moderator_client, _ = await ws_connect(moderator, group_room.name)
+        for c in (owner_client, member_client, moderator_client):
+            await _drain_until(c, "history")
+        await owner_client.send_json_to({
+            "action": "call_start", "target": member.username, "call_id": "call-3", "mode": "audio",
+        })
+        await _drain_until(member_client, "call_incoming", timeout=3)
+        await member_client.send_json_to({
+            "action": "call_accept", "target": owner.username, "call_id": "call-3",
+        })
+        await _drain_until(owner_client, "call_accept", timeout=3)
+        # третий участник звонит member, который уже в активном звонке
+        await moderator_client.send_json_to({
+            "action": "call_start", "target": member.username, "call_id": "call-4", "mode": "audio",
+        })
+        busy = await _drain_until(moderator_client, "call_busy", timeout=3)
+        assert busy["from"] == member.username
+        await owner_client.disconnect()
+        await member_client.disconnect()
+        await moderator_client.disconnect()
+
+    async def test_call_start_relays_to_user_outside_room(self, group_room, owner, stranger, ws_connect):
+        await sync_to_async(
+            lambda: ChatRoom.objects.create(name="stranger-room", owner=stranger, room_type="group")
+        )()
+        owner_client, _ = await ws_connect(owner, group_room.name)
+        stranger_client, _ = await ws_connect(stranger, "stranger-room")
+        await _drain_until(owner_client, "history")
+        await _drain_until(stranger_client, "history")
+        await owner_client.send_json_to({
+            "action": "call_start", "target": stranger.username, "call_id": "call-5", "mode": "audio",
+        })
+        payload = await _drain_until(stranger_client, "call_incoming", timeout=3)
+        assert payload["call_id"] == "call-5"
+        assert payload["from"] == owner.username
+        await owner_client.disconnect()
+        await stranger_client.disconnect()
+
+    async def test_disconnect_ends_active_call(self, group_room, owner, member, ws_connect):
+        owner_client, _ = await ws_connect(owner, group_room.name)
+        member_client, _ = await ws_connect(member, group_room.name)
+        await _drain_until(owner_client, "history")
+        await _drain_until(member_client, "history")
+        await owner_client.send_json_to({
+            "action": "call_start", "target": member.username, "call_id": "call-6", "mode": "audio",
+        })
+        await _drain_until(member_client, "call_incoming", timeout=3)
+        await member_client.send_json_to({
+            "action": "call_accept", "target": owner.username, "call_id": "call-6",
+        })
+        await _drain_until(owner_client, "call_accept", timeout=3)
+        await owner_client.disconnect()
+        hung = await _drain_until(member_client, "call_hangup", timeout=3)
+        assert hung["call_id"] == "call-6"
+        await member_client.disconnect()
+
+    async def test_relay_skips_stale_user_channels(self, group_room, owner, member, ws_connect, fake_redis):
+        owner_client, _ = await ws_connect(owner, group_room.name)
+        member_client, _ = await ws_connect(member, group_room.name)
+        live_channel = next(iter(await fake_redis.smembers(f"presence:user_{member.id}")))
+        stale_channel = "specific.dead!stale1"
+        await fake_redis.sadd(f"presence:user_{member.id}", stale_channel)
+        await _drain_until(owner_client, "history")
+        await _drain_until(member_client, "history")
+        await owner_client.send_json_to({
+            "action": "call_start",
+            "target": member.username,
+            "call_id": "call-7",
+            "mode": "audio",
+        })
+        await _drain_until(member_client, "call_incoming", timeout=3)
+        assert stale_channel not in await fake_redis.smembers(f"presence:user_{member.id}")
+        assert live_channel in await fake_redis.smembers(f"presence:user_{member.id}")
+        await owner_client.disconnect()
+        await member_client.disconnect()
+
+    async def test_prune_stale_user_sets(self, group_room, member, ws_connect, fake_redis):
+        stale = "specific.dead!stale2"
+        await fake_redis.sadd(f"presence:user_{member.id}", stale)
+        client, _ = await ws_connect(member, group_room.name)
+        await _drain_until(client, "history")
+        _prune = ChatConsumer._prune_stale_user_sets
+        await _prune(client, await ChatConsumer._get_redis())
+        assert stale not in await fake_redis.smembers(f"presence:user_{member.id}")
+        await client.disconnect()
 
     async def test_ai_request_empty_prompt(self, group_room, owner, ws_connect):
         client, _ = await ws_connect(owner, group_room.name)

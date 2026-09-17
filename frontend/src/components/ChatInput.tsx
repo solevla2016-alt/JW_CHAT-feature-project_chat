@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CornerUpLeft, Mic, Paperclip, Pencil, SendHorizonal, Smile, Square, Video, X } from "lucide-react";
+import { CornerUpLeft, Mic, Paperclip, Pencil, Plus, SendHorizonal, Smile, Square, Video, X } from "lucide-react";
 import { API_URL } from "@/lib/api";
 
 const EMOJI_LIST = [
@@ -47,6 +47,7 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [pending, setPending] = useState<PendingAttachment | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingType, setRecordingType] = useState<"audio" | "video" | null>(null);
@@ -235,7 +236,7 @@ export function ChatInput({
   const canSend = value.trim() || pending;
 
   return (
-    <div className="border-t border-[var(--border-color)] px-4 py-3 md:px-6">
+    <div className="relative border-t border-[var(--border-color)] px-4 py-3 md:px-6">
       {(replyTarget || editingTarget) && (
         <div className="mb-2 flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm">
           {replyTarget ? (
@@ -283,6 +284,24 @@ export function ChatInput({
         </div>
       )}
 
+      {emojiOpen && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setEmojiOpen(false)} />
+          <div className="absolute bottom-full left-0 z-40 mb-2 grid w-56 grid-cols-6 gap-0.5 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-2 shadow-xl sm:w-72 sm:grid-cols-8">
+            {EMOJI_LIST.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => insertEmoji(emoji)}
+                className="rounded-lg p-1.5 text-xl transition-colors hover:bg-[var(--bg-tertiary)]"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="flex items-end gap-2">
         <input
           ref={fileInputRef}
@@ -310,7 +329,7 @@ export function ChatInput({
           </div>
         ) : (
           <>
-            <div className="relative">
+            <div className="hidden gap-2 md:flex">
               <button
                 type="button"
                 onClick={() => setEmojiOpen((v) => !v)}
@@ -319,48 +338,80 @@ export function ChatInput({
               >
                 <Smile size={18} />
               </button>
-              {emojiOpen && (
+              <button
+                type="button"
+                onClick={() => startRecording("audio")}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:text-[var(--brand-primary)]"
+                title="Записать голосовое"
+              >
+                <Mic size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => startRecording("video")}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:text-[var(--brand-primary)]"
+                title="Записать видео"
+              >
+                <Video size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:text-[var(--brand-primary)]"
+                title="Прикрепить файл"
+              >
+                <Paperclip size={18} />
+              </button>
+            </div>
+            <div className="relative md:hidden">
+              <button
+                type="button"
+                onClick={() => setMoreOpen((v) => !v)}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:text-[var(--brand-primary)]"
+                aria-label="Ещё"
+              >
+                <Plus size={18} />
+              </button>
+              {moreOpen && (
                 <>
-                  <div className="fixed inset-0 z-30" onClick={() => setEmojiOpen(false)} />
-                  <div className="absolute bottom-full left-0 z-40 mb-2 grid w-72 grid-cols-8 gap-0.5 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-2 shadow-xl">
-                    {EMOJI_LIST.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => insertEmoji(emoji)}
-                        className="rounded-lg p-1.5 text-xl transition-colors hover:bg-[var(--bg-tertiary)]"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
+                  <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
+                  <div className="absolute bottom-full left-0 z-40 mb-2 grid grid-cols-2 gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-3 shadow-xl">
+                    <button
+                      type="button"
+                      onClick={() => { setEmojiOpen(true); setMoreOpen(false); }}
+                      className="flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--brand-primary)]"
+                    >
+                      <Smile size={18} />
+                      <span className="text-xs">Эмодзи</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { startRecording("audio"); setMoreOpen(false); }}
+                      className="flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--brand-primary)]"
+                    >
+                      <Mic size={18} />
+                      <span className="text-xs">Голос</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { startRecording("video"); setMoreOpen(false); }}
+                      className="flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--brand-primary)]"
+                    >
+                      <Video size={18} />
+                      <span className="text-xs">Видео</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { fileInputRef.current?.click(); setMoreOpen(false); }}
+                      className="flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--brand-primary)]"
+                    >
+                      <Paperclip size={18} />
+                      <span className="text-xs">Файл</span>
+                    </button>
                   </div>
                 </>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => startRecording("audio")}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:text-[var(--brand-primary)]"
-              title="Записать голосовое"
-            >
-              <Mic size={18} />
-            </button>
-            <button
-              type="button"
-              onClick={() => startRecording("video")}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:text-[var(--brand-primary)]"
-              title="Записать видео"
-            >
-              <Video size={18} />
-            </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:text-[var(--brand-primary)]"
-              title="Прикрепить файл"
-            >
-              <Paperclip size={18} />
-            </button>
           </>
         )}
 

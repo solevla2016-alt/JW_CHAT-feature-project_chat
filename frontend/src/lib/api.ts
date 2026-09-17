@@ -108,6 +108,13 @@ export async function unbanUserApi<T>(roomId: number, userId: number): Promise<T
   return apiFetch<T>(`/chat/rooms/${roomId}/bans/${userId}/`, { method: "DELETE" });
 }
 
+export async function setRoleApi<T>(username: string, role: string): Promise<T> {
+  return apiFetch<T>(`/auth/set-role/`, {
+    method: "POST",
+    body: JSON.stringify({ username, role }),
+  });
+}
+
 export async function searchMessages<T>(roomId: number, q: string): Promise<T> {
   const res = await fetch(
     `${API_BASE}/chat/rooms/${roomId}/search/?q=${encodeURIComponent(q)}`,

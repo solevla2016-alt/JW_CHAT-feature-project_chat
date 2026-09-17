@@ -178,14 +178,25 @@ def _user_data(user: User) -> dict:
         "birth_date": user.birth_date.isoformat() if user.birth_date else None,
         "message_privacy": user.message_privacy,
         "role": user.role,
+        "is_staff": user.is_staff,
     }
+
+
+def _can_manage_roles(user: User) -> bool:
+    """Назначать роли может администратор: staff или пользователь с ролью «admin»."""
+    return bool(user.is_staff or user.role == User.Role.ADMIN)
 
 
 @csrf_exempt
 @api_view(["POST"])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([permissions.IsAdminUser])
 def set_role_view(request: Request) -> Response:
+    if not _can_manage_roles(request.user):
+        return Response(
+            {"error": "Недостаточно прав"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     username = request.data.get("username", "").strip()
     role = request.data.get("role", "").strip()
 

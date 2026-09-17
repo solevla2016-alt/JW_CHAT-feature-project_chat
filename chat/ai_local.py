@@ -415,18 +415,26 @@ def _normalize(text: str) -> str:
 
 
 def _match_query(q: str) -> str | None:
-    best: tuple[int, str] | None = None
+    """Возвращает ответ из базы знаний.
 
+    Ранжирование по специфичности совпавших ключевых слов: чем длиннее ключевое
+    слово и больше их совпало, тем выше приоритет записи. Это исправляет
+    «первое совпадение по списку»: запрос «как сделать сортировку в python?»
+    теперь попадает в раздел алгоритмов, а не в первую запись с общим словом.
+    """
+    best: tuple[int, str] | None = None
     for keywords, answer in _KNOWLEDGE:
         score = 0
+        matched = 0
         for kw in keywords:
             if kw in q:
-                score += 1
-        # засчитываем больше за совпадение в начале вопроса
+                score += len(kw)
+                matched += 1
+        if matched:
+            score += matched * 2
         if score and (best is None or score > best[0]):
             best = (score, answer)
-
-    return best[1] if best and best[0] >= 1 else None
+    return best[1] if best else None
 
 
 def local_ai_answer(prompt: str, history: list[dict[str, Any]] | None = None) -> str | None:

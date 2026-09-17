@@ -92,7 +92,54 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self._broadcast_online_users()
         await self._send_history()
 
+        self._presence_task = asyncio.create_task(self._presence_heartbeat())
+
+    async def _presence_heartbeat(self) -> None:
+        """Продлевает TTL presence-ключа, пока соединение живо.
+
+        Без него пользователь, который 5 минут ничего не отправляет (не пишет,
+        не печатает), выпадает из списка «в сети», хотя веб-сокет открыт.
+        Попутно раз в 10 минут чистит presence:user_* от каналов умерших
+        соединений (такие сеты не имеют TTL и иначе копились бы вечно).
+        """
+        try:
+            while True:
+                await asyncio.sleep(60)
+                redis = await self._get_redis()
+                await redis.expire(f"presence:chan:{self.channel_name}", 300)
+                await self._prune_stale_user_sets(redis)
+        except asyncio.CancelledError:
+            pass
+        except Exception:  # noqa: S110 — фоновая задача; сбой не должен ронять соединение
+            pass
+
+    async def _prune_stale_user_sets(self, redis: aioredis.Redis) -> None:
+        """Удаляет из presence:user_* каналы, чей presence:chan:* уже истёк.
+
+        Канал «жив», пока существует ключ presence:chan:{channel} (его продлевает
+        сердцебиение). Сет presence:user_* сам по себе TTL не имеет, поэтому без
+        этой чистки он копил бы каналы умерших/некорректно закрытых соединений.
+        Свип идёт под Redis-локом: раз в 10 минут его выполняет ровно одно соединение.
+        """
+        acquired = await redis.set("presence:prune:lock", "1", nx=True, ex=600)
+        if not acquired:
+            return
+        async for key in redis.scan_iter(match="presence:user_*"):
+            channels = await redis.smembers(key)
+            if not channels:
+                continue
+            dead = [
+                channel for channel in channels
+                if not await redis.exists(f"presence:chan:{channel}")
+            ]
+            if dead:
+                await redis.srem(key, *dead)
+
     async def disconnect(self, close_code: int) -> None:
+        task = getattr(self, "_presence_task", None)
+        if task is not None:
+            task.cancel()
+
         if not hasattr(self, "room_group_name"):
             return
 
@@ -128,6 +175,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 self.room_group_name,
                 {"type": "screen_stop"},
             )
+
+        await self._cleanup_call_on_disconnect(user)
 
     async def receive(self, text_data: str | None = None, bytes_data: bytes | None = None) -> None:
         if text_data is None:
@@ -166,6 +215,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self._handle_screen_share_stop()
         elif action in ("webrtc_offer", "webrtc_answer", "webrtc_candidate"):
             await self._handle_signal(data, action)
+        elif action in ("call_start", "call_accept", "call_reject", "call_cancel", "call_hangup"):
+            await self._handle_call(data, action)
 
     async def _handle_message(self, data: dict[str, Any]) -> None:
         message_text, error = validate_message(json.dumps(data))
@@ -551,8 +602,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self._send_error("Получатель не найден")
             return
 
-        redis = await self._get_redis()
-        channels = await redis.smembers(f"presence:user_{target_id}")
+        channels = await self._live_user_channels(target_id)
 
         payload = {
             "type": "signal",
@@ -560,6 +610,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "from": self.scope["user"].username,
             "sdp": data.get("sdp"),
             "candidate": data.get("candidate"),
+            "call_id": data.get("call_id"),
         }
         for channel in channels:
             await self.channel_layer.send(channel, {"type": "signal_relay", "payload": payload})
@@ -582,6 +633,156 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def signal_relay(self, event: dict[str, Any]) -> None:
         await self.send(text_data=json.dumps(event["payload"]))
+
+    async def call_relay(self, event: dict[str, Any]) -> None:
+        await self.send(text_data=json.dumps(event["payload"]))
+
+    async def _handle_call(self, data: dict[str, Any], call_action: str) -> None:
+        """Рассчитывает состояние звонка в Redis и релеит call-события цели.
+
+        Ключи:
+          call:act:{room_id}   — SET имён участников активного звонка в комнате;
+          call:meta:{call_id}  — JSON {room_id, caller/callee, caller_id/callee_id};
+          call:user:{user_id}  — SET call_id активных звонков пользователя.
+        """
+        target = (data.get("target") or "").strip()
+        call_id = (data.get("call_id") or "").strip()
+        if not target or not call_id:
+            await self._send_error("Укажите получателя и call_id")
+            return
+
+        target_id = await self._get_user_id(target)
+        if target_id is None:
+            await self._send_error("Получатель не найден")
+            return
+
+        redis = await self._get_redis()
+        caller = self.scope["user"].username
+        caller_id = self.scope["user"].id
+        room_id = self.room.id
+
+        if call_action == "call_start":
+            if await redis.sismember(f"call:act:{room_id}", target):
+                await self._send_call_busy(caller, call_id, target)
+                return
+            await self._call_relay_to(target_id, {
+                "type": "call_incoming",
+                "call_id": call_id,
+                "from": caller,
+                "mode": data.get("mode") or "audio",
+            })
+            return
+
+        if call_action == "call_accept":
+            await redis.sadd(f"call:act:{room_id}", caller, target)
+            await redis.expire(f"call:act:{room_id}", 300)
+            meta = json.dumps({
+                "room_id": room_id,
+                "caller": caller, "callee": target,
+                "caller_id": caller_id, "callee_id": target_id,
+            })
+            await redis.set(f"call:meta:{call_id}", meta, ex=600)
+            await redis.sadd(f"call:user:{caller_id}", call_id)
+            await redis.sadd(f"call:user:{target_id}", call_id)
+            event_type = "call_accept"
+        elif call_action == "call_reject":
+            event_type = "call_reject"
+        elif call_action == "call_cancel":
+            event_type = "call_cancel"
+        elif call_action == "call_hangup":
+            await self._end_call(redis, call_id)
+            event_type = "call_hangup"
+        else:
+            return
+
+        await self._call_relay_to(target_id, {
+            "type": event_type,
+            "call_id": call_id,
+            "from": caller,
+        })
+
+    async def _call_relay_to(self, target_id: int, payload: dict[str, Any]) -> None:
+        channels = await self._live_user_channels(target_id)
+        for channel in channels:
+            await self.channel_layer.send(channel, {"type": "call_relay", "payload": payload})
+
+    async def _live_user_channels(self, user_id: int) -> list[str]:
+        """Живые каналы пользователя; каналы умерших соединений удаляет из сета.
+
+        Канал считается живым, пока существует ключ presence:chan:{channel}
+        (его продлевает сердцебиение каждые 60 секунд). Мёртвые каналы убираем
+        сразу, чтобы релей не слал в них и чтобы presence:user_* не раздувался.
+        """
+        redis = await self._get_redis()
+        key = f"presence:user_{user_id}"
+        channels = await redis.smembers(key)
+        if not channels:
+            return []
+        live: list[str] = []
+        dead: list[str] = []
+        for channel in channels:
+            if await redis.exists(f"presence:chan:{channel}"):
+                live.append(channel)
+            else:
+                dead.append(channel)
+        if dead:
+            await redis.srem(key, *dead)
+        return live
+
+    async def _send_call_busy(self, caller: str, call_id: str, busy_username: str) -> None:
+        """Отвечает вызывающему, что цель занята (без релея самой цели)."""
+        caller_id = await self._get_user_id(caller)
+        if caller_id is None:
+            return
+        channels = await self._live_user_channels(caller_id)
+        for channel in channels:
+            await self.channel_layer.send(channel, {
+                "type": "call_relay",
+                "payload": {"type": "call_busy", "call_id": call_id, "from": busy_username},
+            })
+
+    async def _end_call(self, redis: aioredis.Redis, call_id: str) -> None:
+        """Приводит Redis-состояние звонка в порядок после окончания."""
+        raw = await redis.get(f"call:meta:{call_id}")
+        try:
+            meta = json.loads(raw) if raw else None
+        except json.JSONDecodeError:
+            meta = None
+        if not meta:
+            return
+        room_id = meta.get("room_id")
+        if room_id is not None:
+            await redis.srem(f"call:act:{room_id}", meta.get("caller"), meta.get("callee"))
+        if meta.get("caller_id") is not None:
+            await redis.srem(f"call:user:{meta['caller_id']}", call_id)
+        if meta.get("callee_id") is not None:
+            await redis.srem(f"call:user:{meta['callee_id']}", call_id)
+        await redis.delete(f"call:meta:{call_id}")
+
+    async def _cleanup_call_on_disconnect(self, user) -> None:
+        """Если пользователь ушёл из комнаты во время звонка — уведомить собеседника."""
+        redis = await self._get_redis()
+        call_ids = await redis.smembers(f"call:user:{user.id}")
+        if not call_ids:
+            return
+        for call_id in call_ids:
+            raw = await redis.get(f"call:meta:{call_id}")
+            try:
+                meta = json.loads(raw) if raw else None
+            except json.JSONDecodeError:
+                meta = None
+            if not meta or meta.get("room_id") != self.room.id:
+                continue
+            other = meta.get("callee") if meta.get("caller") == user.username else meta.get("caller")
+            await self._end_call(redis, call_id)
+            if other:
+                other_id = await self._get_user_id(other)
+                if other_id is not None:
+                    await self._call_relay_to(other_id, {
+                        "type": "call_hangup",
+                        "call_id": call_id,
+                        "from": user.username,
+                    })
 
     # --- Helpers ---
 
@@ -824,10 +1025,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         redis = await self._get_redis()
         channel_names = await redis.smembers(self.presence_key)
         usernames: list[str] = []
+        dead: list[str] = []
         for channel in channel_names:
             username = await redis.get(f"presence:chan:{channel}")
             if username:
                 usernames.append(username)
+            else:
+                dead.append(channel)
+        if dead:
+            await redis.srem(self.presence_key, *dead)
         users = await self._online_users_with_avatar(usernames)
         await self.channel_layer.group_send(
             self.room_group_name,

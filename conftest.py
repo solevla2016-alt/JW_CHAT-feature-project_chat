@@ -1,5 +1,7 @@
 """Общие фикстуры для тестов JOIN WORK!."""
 
+from typing import Any
+
 import pytest
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
@@ -32,14 +34,23 @@ class FakeRedis:
     async def smembers(self, key: str) -> set[str]:
         return set(self.store.get(key, set()))
 
+    async def sismember(self, key: str, value: str) -> int:
+        return 1 if value in self.store.get(key, set()) else 0
+
     async def setex(self, key: str, _ttl: int, value: object) -> None:
         self.store[key] = value
 
-    async def set(self, key: str, value: object) -> None:
+    async def set(self, key: str, value: object, nx: bool = False, **_kwargs) -> bool:
+        if nx and key in self.store:
+            return False
         self.store[key] = value
+        return True
 
     async def get(self, key: str) -> object | None:
         return self.store.get(key)
+
+    async def exists(self, key: str) -> int:
+        return 1 if key in self.store else 0
 
     async def delete(self, key: str) -> int:
         self.store.pop(key, None)
@@ -47,6 +58,12 @@ class FakeRedis:
 
     async def expire(self, key: str, _ttl: int) -> bool:
         return True
+
+    async def scan_iter(self, match: str = "*") -> Any:
+        prefix = match.rstrip("*")
+        for key in list(self.store):
+            if key.startswith(prefix):
+                yield key
 
     def flush(self) -> None:
         self.store.clear()

@@ -47,7 +47,7 @@ export function ServerRail({
   return (
     <div
       style={{ width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH }}
-      className="flex shrink-0 flex-col items-stretch gap-1.5 overflow-hidden border-r border-[var(--border-color)] bg-[var(--bg-tertiary)] py-3 transition-[width] duration-200"
+      className="hidden shrink-0 flex-col items-stretch gap-1.5 overflow-hidden border-r border-[var(--border-color)] bg-[var(--bg-tertiary)] py-3 transition-[width] duration-200 md:flex"
     >
       <button
         title="Главная"

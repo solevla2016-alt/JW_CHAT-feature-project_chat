@@ -1,27 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Maximize2, Menu, Minimize2, MonitorUp, MonitorStop, Users, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Maximize2, Menu, Minimize2, MonitorUp, MonitorStop, Phone, Users, Video, X } from "lucide-react";
 import { useChatStore } from "@/lib/store";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { API_URL, mediaUrl } from "@/lib/api";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   resetScreenShare,
   setScreenShareHandlers,
   startScreenShare,
   stopScreenShare,
 } from "@/lib/screenShare";
+import { resetCalls, setCallHandlers, startCall } from "@/lib/calls";
+import type { CallMode } from "@/lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { TypingIndicator } from "./TypingIndicator";
 import { EmptyState } from "./EmptyState";
 import { MembersPanel } from "./MembersPanel";
+import { CallPanel } from "./CallPanel";
 
 export function ChatWindow() {
   const { activeRoom, messages, setSidebarOpen } = useChatStore();
   const { sendMessage, startTyping, editMessage, deleteMessage, toggleReaction, sendAiRequest, togglePin, sendRead } = useWebSocket(activeRoom?.name ?? null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const resetRoomUnread = useChatStore((s) => s.resetRoomUnread);
+  const call = useChatStore((s) => s.call);
+  const setCall = useChatStore((s) => s.setCall);
+  const setCallLocalStream = useChatStore((s) => s.setCallLocalStream);
+  const setCallRemoteStream = useChatStore((s) => s.setCallRemoteStream);
   const [replyTarget, setReplyTarget] = useState<{ id: number; username: string; text: string } | null>(null);
   const [editingTarget, setEditingTarget] = useState<{ id: number; text: string } | null>(null);
   const typingUsers = useChatStore((s) => s.typingUsers);
@@ -30,6 +38,13 @@ export function ChatWindow() {
   const [membersOpen, setMembersOpen] = useState<boolean>(() =>
     typeof window !== "undefined" ? window.innerWidth >= 1280 : false
   );
+  const isMobile = useIsMobile();
+
+  useEffect(() => {
+    if (isMobile) {
+      setMembersOpen(false);
+    }
+  }, [isMobile]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Array<{ id: number; username: string; message: string; created_at: string }>>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -58,17 +73,47 @@ export function ChatWindow() {
         });
       },
     });
+    setCallHandlers({
+      onPhase: (phase, endReason) => {
+        const cur = useChatStore.getState().call;
+        if (!cur) return;
+        useChatStore.getState().setCall({ ...cur, phase, endReason });
+        if (phase === "ended") {
+          window.setTimeout(() => {
+            const state = useChatStore.getState();
+            const latest = state.call;
+            if (latest?.phase === "ended") {
+              state.callRemoteStream?.getTracks().forEach((t) => t.stop());
+              state.setCallRemoteStream(null);
+              state.setCallLocalStream(null);
+              state.setCall(null);
+            }
+          }, 1800);
+        }
+      },
+      onRemoteStream: (stream) => {
+        const prev = useChatStore.getState().callRemoteStream;
+        if (prev && prev !== stream) prev.getTracks().forEach((t) => t.stop());
+        useChatStore.getState().setCallRemoteStream(stream);
+      },
+    });
   }, [user?.username]);
 
   const lastRoomId = useRef<number | null>(null);
   useEffect(() => {
     if (lastRoomId.current !== null && lastRoomId.current !== activeRoom?.id) {
+      const state = useChatStore.getState();
       resetScreenShare();
       setScreenState(null);
       setRemoteStream((prev) => {
         prev?.getTracks().forEach((t) => t.stop());
         return null;
       });
+      resetCalls();
+      state.callRemoteStream?.getTracks().forEach((t) => t.stop());
+      state.setCallRemoteStream(null);
+      state.setCallLocalStream(null);
+      state.setCall(null);
     }
     lastRoomId.current = activeRoom?.id ?? null;
   }, [activeRoom?.id]);
@@ -76,6 +121,7 @@ export function ChatWindow() {
   useEffect(() => {
     return () => {
       resetScreenShare();
+      resetCalls();
     };
   }, []);
 
@@ -112,6 +158,32 @@ export function ChatWindow() {
     stopScreenShare();
     setScreenState((s) => (s?.isMe ? null : s));
   }, []);;
+
+  const directPeer = useMemo(() => {
+    if (activeRoom?.room_type !== "direct") return null;
+    const me = user?.username ?? "";
+    const fromMembers = activeRoom.members?.find((m) => m.username !== me)?.username;
+    if (fromMembers) return fromMembers;
+    return activeRoom.name !== me ? activeRoom.name : null;
+  }, [activeRoom, user]);
+
+  const handleStartCall = useCallback(
+    async (mode: CallMode) => {
+      if (!directPeer || !user) return;
+      const res = await startCall(directPeer, mode, user.username);
+      if (res) {
+        setCallLocalStream(res.stream);
+        setCall({
+          id: res.callId,
+          peer: directPeer,
+          mode,
+          direction: "outgoing",
+          phase: "calling",
+        });
+      }
+    },
+    [directPeer, user, setCall, setCallLocalStream]
+  );
 
   const scrollToMessage = useCallback((id: number) => {
     const el = messageRefs.current.get(id);
@@ -184,6 +256,9 @@ export function ChatWindow() {
           screenShareActive={!!screenState}
           screenShareLoading={startingShare}
           onToggleScreenShare={screenState?.isMe ? handleStopScreenShare : handleStartScreenShare}
+          showCallButtons={!!directPeer && !call}
+          onCallAudio={() => void handleStartCall("audio")}
+          onCallVideo={() => void handleStartCall("video")}
         />
 
         {screenState && (
@@ -309,6 +384,8 @@ export function ChatWindow() {
             </div>
           </div>
         )}
+
+        <CallPanel />
       </div>
   );
 }
@@ -325,6 +402,9 @@ export function ChatHeader({
   screenShareActive,
   screenShareLoading,
   onToggleScreenShare,
+  showCallButtons,
+  onCallAudio,
+  onCallVideo,
 }: {
   roomName: string;
   roomType?: "group" | "channel" | "direct";
@@ -337,6 +417,9 @@ export function ChatHeader({
   screenShareActive?: boolean;
   screenShareLoading?: boolean;
   onToggleScreenShare?: () => void;
+  showCallButtons?: boolean;
+  onCallAudio?: () => void;
+  onCallVideo?: () => void;
 }) {
   const onlineUsers = useChatStore((s) => s.onlineUsers);
   const typeLabel =
@@ -368,6 +451,24 @@ export function ChatHeader({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {showCallButtons && onCallAudio && onCallVideo && (
+          <>
+            <button
+              onClick={onCallAudio}
+              className="rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]"
+              title="Голосовой вызов"
+            >
+              <Phone size={18} />
+            </button>
+            <button
+              onClick={onCallVideo}
+              className="rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]"
+              title="Видеозвонок"
+            >
+              <Video size={18} />
+            </button>
+          </>
+        )}
         {canScreenShare && onToggleScreenShare && (
           <button
             onClick={onToggleScreenShare}
@@ -380,7 +481,9 @@ export function ChatHeader({
             title={screenShareActive ? "Остановить показ экрана" : "Показать экран участникам"}
           >
             {screenShareActive ? <MonitorStop size={16} /> : <MonitorUp size={16} />}
-            {screenShareActive ? "Остановить" : "Экран"}
+            <span className="hidden sm:inline">
+              {screenShareActive ? "Остановить" : "Экран"}
+            </span>
           </button>
         )}
         <button
@@ -405,7 +508,7 @@ export function ChatHeader({
         >
           🔍
         </button>
-        <div className="flex -space-x-2">
+        <div className="hidden -space-x-2 md:flex">
           {onlineUsers.slice(0, 5).map((u) => (
             <div
               key={u.username}
@@ -494,7 +597,7 @@ function ScreenShareBar({
   return (
     <div className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/90 backdrop-blur">
       <div className="mx-auto w-full max-w-7xl px-4 py-2 md:px-6">
-        <div className="flex items-center gap-3">
+<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div
             ref={videoWrapRef}
             className="relative w-full overflow-hidden rounded-xl border border-[var(--border-color)] bg-black"

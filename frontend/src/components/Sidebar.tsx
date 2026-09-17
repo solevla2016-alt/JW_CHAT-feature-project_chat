@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   BookUser,
   ChevronDown,
+  Home,
   Link2,
   LogOut,
   Megaphone,
@@ -296,6 +297,14 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
       <div className="flex h-full min-w-0 flex-1 flex-col border-r border-[var(--border-color)] bg-[var(--bg-primary)]">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
+            <button
+              onClick={() => selectContext("home")}
+              className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--brand-primary)] md:hidden"
+              aria-label="Главная"
+              title="Показать все комнаты"
+            >
+              <Home size={16} />
+            </button>
             <div className="truncate text-sm font-bold">
               {activeId === "home" ? "JOIN WORK!" : currentServer?.name ?? "Сервер"}
             </div>
@@ -686,7 +695,7 @@ onClick={async () => {
                         {getInitials(user?.username ?? "JW")}
                       </div>
                     )}
-                    <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-[9px] font-semibold text-white opacity-0 transition-opacity hover:opacity-100">
+                    <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-[9px] font-semibold text-white md:opacity-0 md:transition-opacity md:hover:opacity-100">
                       Сменить
                     </span>
                     <input

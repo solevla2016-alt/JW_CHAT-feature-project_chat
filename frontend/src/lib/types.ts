@@ -7,6 +7,7 @@ export interface User {
   birth_date?: string | null;
   message_privacy?: "everyone" | "contacts" | "nobody";
   role?: "member" | "moderator" | "admin";
+  is_staff?: boolean;
 }
 
 export interface ReplyTo {
@@ -96,6 +97,19 @@ export interface OnlineUser {
   avatar: string | null;
 }
 
+export type CallMode = "audio" | "video";
+
+export type CallPhase = "calling" | "ringing" | "connecting" | "active" | "ended";
+
+export interface CallState {
+  id: string;
+  peer: string;
+  mode: CallMode;
+  direction: "outgoing" | "incoming";
+  phase: CallPhase;
+  endReason?: string;
+}
+
 export interface WebSocketMessage {
   type: string;
   id?: number;
@@ -127,4 +141,6 @@ export interface WebSocketMessage {
   sdp?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
   signal_type?: string;
+  call_id?: string;
+  mode?: CallMode;
 }
