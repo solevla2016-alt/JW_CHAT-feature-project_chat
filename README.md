@@ -1,7 +1,8 @@
 # 🚀 JOIN WORK! — Modern Real-Time Chat
 
 Современный real-time мессенджер уровня Telegram/Slack для команды **JOIN WORK!**.
-WebSocket-общение, медиа, голосовые с транскрипцией, AI-ассистент — всё в одном.
+WebSocket-общение, медиа, голосовые с транскрипцией, аудио/видеозвонки,
+демонстрация экрана и AI-ассистент — всё в одном.
 
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.1-092E20?style=flat&logo=django&logoColor=white)
@@ -12,7 +13,7 @@ WebSocket-общение, медиа, голосовые с транскрипц
 ![Tailwind](https://img.shields.io/badge/Tailwind-3-06B6D4?style=flat&logo=tailwindcss&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat&logo=postgresql&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-7-FF4438?style=flat&logo=redis&logoColor=white)
-![Zustand](https://img.shields.io/badge/Zustand-store-78350f?style=flat)
+![State Manage](https://img.shields.io/badge/State%20Manage-Zustand-78350f?style=flat)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 
 ## ✨ Возможности
@@ -24,16 +25,32 @@ WebSocket-общение, медиа, голосовые с транскрипц
 - Индикатор «печатает...» и онлайн-статус участников
 - Счётчик непрочитанных сообщений в сайдбаре
 
+**Звонки и демонстрация экрана**
+- 📞 Аудио- и видеозвонки 1:1 (WebRTC) прямо в чате
+- Кнопки звонка любому онлайн-участнику из списка участников комнаты
+- Входящие/исходящие вызовы, «занято», отмена/отклонение/завершение, тишина микрофона
+- 🖥 Демонстрация экрана участникам группы
+
+**Модерация и роли**
+- Роли: пользователь / модератор / администратор
+- Назначение модератора прямо в UI (только у администраторов и staff)
+- Блокировка/разблокировка участников в комнате, список банов
+- Удаление сообщений по правам
+
 **Медиа**
 - Вложения: изображения, видео, файлы
 - Запись голосовых сообщений прямо в чате (MediaRecorder)
 - **Автотранскрипция голосовых в текст** (Google Web Speech API)
 
 **Умные функции**
-- **AI-ассистент** для разработки — `/ai ваш вопрос` (локальный бот или облачный Qwen)
+- **AI-ассистент** для разработки — `/ai ваш вопрос` (локальный бот или облачный OpenRouter)
 - Поиск по сообщениям в комнате
 - Закрепление важных сообщений
 - Реакции-эмодзи на сообщениях (👍 ❤️ 😂 🔥)
+
+**Серверы и профиль**
+- Серверы с приглашениями по токену и вступлением по ссылке
+- Профиль: статус, аватар, дата рождения, настройки приватности сообщений
 
 **Интерфейс**
 - Тёмная и светлая темы (авто + ручное переключение)
@@ -49,26 +66,29 @@ WebSocket-общение, медиа, голосовые с транскрипц
 │   └── urls.py             # REST API маршруты
 ├── users/                  # Кастомная модель User + Auth API
 ├── chat/                   # Core-приложение чата
-│   ├── models.py           # ChatRoom, Message, Reaction, ReadStatus
-│   ├── consumers.py        # WebSocket consumer (Redis channel layer)
+│   ├── models.py           # ChatRoom, Message, Reaction, ReadStatus, RoomBan
+│   ├── consumers.py        # WebSocket consumer (чат, presence, звонки, скрин)
+│   ├── permissions.py      # Роли, модерация, баны
 │   ├── serializers.py      # DRF сериализаторы
-│   ├── api_views.py        # REST эндпоинты (upload, search, transcribe)
+│   ├── api_views.py        # REST эндпоинты (upload, search, transcribe, bans)
 │   ├── ai_service.py       # AI-ассистент (OpenRouter + fallback)
 │   ├── ai_local.py         # Локальный AI-бот (без ключа)
 │   └── speech_service.py   # Транскрипция голосовых
 │
 └── frontend/               # Next.js 14 + TypeScript + Tailwind
     └── src/
-        ├── app/            # App Router страницы
-        ├── components/     # MessageBubble, ChatInput, Sidebar, ChatWindow...
-        └── lib/            # Zustand store, WebSocket hook, API
+        ├── app/            # App Router страницы (chat, login, register)
+        ├── components/     # MessageBubble, ChatInput, Sidebar, ChatWindow,
+        │                   # CallPanel, MembersPanel, ScreenShareBar...
+        ├── hooks/          # useIsMobile и др.
+        └── lib/            # Zustand store, WebSocket hook, calls/ringtone API
 ```
 
 ## ⚙️ Технологии
 
 **Backend**
 - Python 3.11+, Django 5.1, Django Channels 4.1, Daphne
-- PostgreSQL 15, Redis 7 (Channel Layer)
+- PostgreSQL 15, Redis 7 (Channel Layer + звонки/presence)
 - DRF, django-cors-headers, Poetry, Ruff, Pytest
 - SpeechRecognition + pydub + imageio-ffmpeg (транскрипция)
 - httpx + OpenRouter (AI)
@@ -76,6 +96,7 @@ WebSocket-общение, медиа, голосовые с транскрипц
 **Frontend**
 - Next.js 14 (App Router), TypeScript (strict)
 - Tailwind CSS, Framer Motion, Zustand, Lucide Icons
+- WebRTC (RTCPeerConnection) для звонков и демонстрации экрана
 
 ## 🚀 Быстрый старт
 
@@ -116,7 +137,7 @@ npm run dev
 
 ### 4. AI-ассистент
 
-Без ключа работает локальный бот. Для облачного Qwen задайте в `.env`:
+Без ключа работает локальный бот. Для облачного OpenRouter задайте в `.env`:
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
@@ -137,14 +158,31 @@ AI ответит прямо в чате зелёным пузырём.
 | POST | `/api/auth/login/` | Вход |
 | POST | `/api/auth/logout/` | Выход |
 | GET | `/api/auth/me/` | Текущий пользователь |
+| GET | `/api/auth/users/` | Список пользователей |
+| PATCH | `/api/auth/profile/` | Обновление профиля |
+| POST | `/api/auth/avatar/` | Загрузка аватара |
+| POST | `/api/auth/set-role/` | Назначение роли (admin/staff) |
+| GET | `/api/chat/servers/` | Список серверов |
+| POST | `/api/chat/servers/create/` | Создать сервер |
+| GET | `/api/chat/servers/{id}/invite/` | Токен приглашения |
+| POST | `/api/chat/servers/join/{token}/` | Вступить по токену |
 | GET | `/api/chat/rooms/` | Список комнат (с непрочитанными) |
 | POST | `/api/chat/rooms/create/` | Создать комнату |
 | GET | `/api/chat/rooms/{id}/messages/` | История сообщений |
+| DELETE | `/api/chat/rooms/{id}/messages/{message_id}/` | Удалить сообщение |
 | GET | `/api/chat/rooms/{id}/search/?q=` | Поиск по сообщениям |
+| GET | `/api/chat/rooms/{id}/bans/` | Список банов |
+| POST | `/api/chat/rooms/{id}/bans/` | Заблокировать участника |
+| DELETE | `/api/chat/rooms/{id}/bans/{user_id}/` | Разблокировать |
+| POST | `/api/chat/rooms/{id}/join/` | Вступить в комнату |
+| POST | `/api/chat/rooms/{id}/leave/` | Покинуть комнату |
+| POST | `/api/chat/rooms/{id}/members/` | Добавить участника |
 | POST | `/api/chat/rooms/{id}/upload/` | Загрузка вложения |
 | POST | `/api/chat/rooms/{id}/transcribe/` | Транскрипция голосового |
 
-**WebSocket:** `ws://localhost:8000/ws/chat/{room_name}/`
+**WebSocket:** `ws://localhost:8000/ws/chat/{room_name}/` — чат, онлайн-статус,
+звонки и демонстрация экрана. Колл-сигналинг (offer/answer/candidate) идёт
+тем же WS-каналом по полям `target`/`call_id`.
 
 ## 🚢 Деплой
 
