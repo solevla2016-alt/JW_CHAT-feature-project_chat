@@ -5,6 +5,9 @@ import { DevRedirect } from "@/components/DevRedirect";
 export const metadata: Metadata = {
   title: "JOIN WORK! — Мессенджер",
   description: "Современный реально-временный чат для команды JOIN WORK!",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({

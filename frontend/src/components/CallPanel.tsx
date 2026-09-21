@@ -16,18 +16,101 @@ function CallVideo({
   muted?: boolean;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  const [needsTap, setNeedsTap] = useState(false);
   useEffect(() => {
     const el = ref.current;
-    if (el && stream) {
-      el.srcObject = stream;
-      void el.play().catch(() => {});
-    }
+    if (!el || !stream) return;
+    el.srcObject = stream;
+    el.muted = true;
+    setNeedsTap(false);
+    const start = async () => {
+      try {
+        await el.play();
+        if (!muted) el.muted = false;
+      } catch {
+        el.muted = true;
+        setNeedsTap(!muted);
+      }
+    };
+    void start();
     return () => {
       if (el) el.srcObject = null;
     };
-  }, [stream, className]);
+  }, [stream, className, muted]);
   if (!stream) return null;
-  return <video ref={ref} autoPlay playsInline muted={muted} className={className} />;
+  return (
+    <>
+      <video ref={ref} autoPlay playsInline muted className={className} />
+      {needsTap && (
+        <button
+          onClick={() => {
+            const el = ref.current;
+            if (!el) return;
+            el.muted = true;
+            void el
+              .play()
+              .then(() => {
+                el.muted = false;
+                setNeedsTap(false);
+              })
+              .catch(() => {});
+          }}
+          className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 text-sm font-semibold text-white"
+        >
+          Нажмите, чтобы включить звук
+        </button>
+      )}
+    </>
+  );
+}
+
+function CallAudio({ stream }: { stream: MediaStream | null }) {
+  const ref = useRef<HTMLAudioElement | null>(null);
+  const [needsTap, setNeedsTap] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !stream) return;
+    el.srcObject = stream;
+    el.muted = true;
+    setNeedsTap(false);
+    const start = async () => {
+      try {
+        await el.play();
+        el.muted = false;
+      } catch {
+        el.muted = true;
+        setNeedsTap(true);
+      }
+    };
+    void start();
+    return () => {
+      if (el) el.srcObject = null;
+    };
+  }, [stream]);
+  return (
+    <>
+      <audio ref={ref} autoPlay playsInline muted />
+      {needsTap && (
+        <button
+          onClick={() => {
+            const el = ref.current;
+            if (!el) return;
+            el.muted = true;
+            void el
+              .play()
+              .then(() => {
+                el.muted = false;
+                setNeedsTap(false);
+              })
+              .catch(() => {});
+          }}
+          className="absolute inset-0 z-10 flex items-center justify-center bg-black/70 text-sm font-semibold text-white"
+        >
+          Нажмите, чтобы включить звук
+        </button>
+      )}
+    </>
+  );
 }
 
 export function CallPanel() {

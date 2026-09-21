@@ -43,7 +43,9 @@ export default function ChatPage() {
         setRooms(rooms);
         setServers(servers);
         if (rooms.length > 0 && !activeRoom) {
-          setActiveRoom(rooms[0]);
+          if (servers.length === 0) {
+            setActiveRoom(rooms[0]);
+          }
         }
       } catch {
         router.push("/login");

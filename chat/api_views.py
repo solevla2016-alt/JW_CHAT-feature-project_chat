@@ -2,9 +2,8 @@ import os
 import uuid
 
 from django.core.exceptions import ValidationError
-from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.db.models import Q
+from django.db.models import Exists, F, OuterRef, Q
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import permissions, status
 from rest_framework.decorators import (
@@ -53,6 +52,11 @@ def rooms_list_view(request: Request) -> Response:
         .distinct()
         .select_related("owner", "server")
         .prefetch_related("members", "messages")
+        .annotate(has_messages=Exists(Message.objects.filter(room=OuterRef("pk"))))
+        .order_by(
+            F("has_messages").desc(),
+            F("created_at").desc(),
+        )
     )
     serializer = ChatRoomSerializer(rooms, many=True, context={"request": request})
     return Response(serializer.data)
@@ -216,11 +220,21 @@ def room_upload_view(request: Request, room_id: int) -> Response:
     if not file:
         return Response({"error": "Файл не прикреплён"}, status=status.HTTP_400_BAD_REQUEST)
 
+    from django.conf import settings as djsettings
+
+    if file.size > getattr(djsettings, "FILE_UPLOAD_MAX_SIZE", 100 * 1024 * 1024):
+        return Response({"error": "Файл слишком большой"}, status=status.HTTP_400_BAD_REQUEST)
+
     content_type = file.content_type or ""
     attachment_type = ATTACHMENT_MAP.get(content_type, "file")
 
     ext = os.path.splitext(file.name)[1].lower()
-    path = default_storage.save(f"uploads/{uuid.uuid4().hex}{ext}", ContentFile(file.read()))
+    path = f"uploads/{uuid.uuid4().hex}{ext}"
+    if hasattr(default_storage, "path"):
+        os.makedirs(os.path.dirname(default_storage.path(path)), exist_ok=True)
+    with default_storage.open(path, "wb") as dst:
+        for chunk in file.chunks():
+            dst.write(chunk)
 
     return Response(
         {

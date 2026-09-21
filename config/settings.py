@@ -150,11 +150,17 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Cross-site auth: frontend (Vercel) and backend (Railway/Render) are different domains.
 # SameSite=None + Secure is required so the session cookie survives HTTPS requests and WS handshakes.
-if not DEBUG:
-    SESSION_COOKIE_SAMESITE = "None"
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SAMESITE = "None"
-    CSRF_COOKIE_SECURE = True
+# Overridable via env for same-site/plain-HTTP deployments (e.g. test on a bare IP without TLS).
+_secure_cookies_default = not DEBUG
+SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "None" if _secure_cookies_default else "Lax")
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", str(_secure_cookies_default)).strip() != "False"
+CSRF_COOKIE_SAMESITE = os.getenv("CSRF_COOKIE_SAMESITE", "None" if _secure_cookies_default else "Lax")
+CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", str(_secure_cookies_default)).strip() != "False"
+
+# --- Uploads: не в память, файлы >2.5MB сразу на диск (частично в память не тянем) ---
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2_500_000
+DATA_UPLOAD_MAX_MEMORY_SIZE = 15_000_000
+FILE_UPLOAD_MAX_SIZE = int(os.getenv("FILE_UPLOAD_MAX_SIZE", str(100 * 1024 * 1024)))
 
 # --- AI Assistant (OpenRouter — бесплатный) ---
 AI_ASSISTANT_USERNAME = os.getenv("AI_ASSISTANT_USERNAME", "AI Assistant")

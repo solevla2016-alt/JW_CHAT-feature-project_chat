@@ -125,6 +125,12 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
       const s = servers.find((x) => x.id === key) ?? null;
       setActiveServer(s);
     }
+    const ctxRooms = key === "home"
+      ? rooms.filter((r) => r.room_type === "direct")
+      : rooms.filter((r) => r.server === key && r.room_type !== "direct");
+    if (ctxRooms.length > 0) {
+      setActiveRoom(ctxRooms[0]);
+    }
   };
 
   const didAutoSelect = useRef(false);

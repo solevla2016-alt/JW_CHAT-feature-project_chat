@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Crown, Phone, Shield, ShieldBan, Unlock, Video, X } from "lucide-react";
+import { Ban, Crown, Phone, Shield, ShieldBan, Unlock, UserPlus, Video, X } from "lucide-react";
 import { useChatStore } from "@/lib/store";
-import { banUserApi, getRoomBans, mediaUrl, setRoleApi, unbanUserApi } from "@/lib/api";
+import { apiFetch, API_URL, banUserApi, getRoomBans, mediaUrl, setRoleApi, unbanUserApi } from "@/lib/api";
 import { startCall } from "@/lib/calls";
-import type { CallMode, RoomBan } from "@/lib/types";
+import type { CallMode, ChatRoomMember, RoomBan, User } from "@/lib/types";
 
 export function MembersPanel({ onClose }: { onClose: () => void }) {
   const activeRoom = useChatStore((s) => s.activeRoom);
@@ -16,6 +16,11 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
   const setCallLocalStream = useChatStore((s) => s.setCallLocalStream);
   const [bans, setBans] = useState<RoomBan[]>([]);
   const [loading, setLoading] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [inviteSelected, setInviteSelected] = useState<number[]>([]);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState("");
 
   const canModerate =
     !!activeRoom &&
@@ -38,6 +43,60 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void refreshBans();
   }, [refreshBans]);
+
+  useEffect(() => {
+    if (!inviteOpen) return;
+    setInviteSelected([]);
+    setInviteMsg("");
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/auth/users/`, { credentials: "include" });
+        if (res.ok) {
+          setAllUsers(await res.json());
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [inviteOpen]);
+
+  const toggleInviteUser = (id: number) => {
+    setInviteSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleInvite = async () => {
+    if (!activeRoom || inviteSelected.length === 0) return;
+    setInviteLoading(true);
+    setInviteMsg("");
+    try {
+      for (const uid of inviteSelected) {
+        await apiFetch(`/chat/rooms/${activeRoom.id}/members/`, {
+          method: "POST",
+          body: JSON.stringify({ user_id: uid }),
+        });
+      }
+      const added = allUsers.filter((u) => inviteSelected.includes(u.id));
+      const newMemberIds = new Set([...(activeRoom.members ?? []).map((m) => m.id), ...inviteSelected]);
+      let newMembers: ChatRoomMember[] = [
+        ...(activeRoom.members ?? []),
+        ...added.map((u) => ({
+          id: u.id,
+          username: u.username,
+          avatar: u.avatar ?? null,
+          role: u.role ?? ("member" as const),
+        })),
+      ];
+      newMembers = newMembers.filter((m) => newMemberIds.has(m.id));
+      setRoomMembers(activeRoom.id, newMembers);
+      setInviteOpen(false);
+    } catch (err) {
+      setInviteMsg(err instanceof Error ? err.message : "Не удалось пригласить");
+    } finally {
+      setInviteLoading(false);
+    }
+  };
 
   if (!activeRoom) return null;
 
@@ -124,13 +183,25 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
             {onlineCount} в сети / {members.length} всего
           </p>
         </div>
-        <button
-          onClick={onClose}
-          className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
-          aria-label="Закрыть"
-        >
-          <X size={16} />
-        </button>
+        <div className="flex items-center gap-1">
+          {activeRoom.owner === user?.username && (
+            <button
+              onClick={() => setInviteOpen(true)}
+              className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--brand-primary)]"
+              title="Пригласить участника"
+              aria-label="Пригласить участника"
+            >
+              <UserPlus size={16} />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
+            aria-label="Закрыть"
+          >
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-3">
@@ -259,6 +330,62 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
+
+      {inviteOpen && (
+        <div className="border-t border-[var(--border-color)] p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              Пригласить участников
+            </div>
+            <button
+              onClick={() => setInviteOpen(false)}
+              className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)]"
+              aria-label="Закрыть"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <div className="max-h-44 space-y-0.5 overflow-y-auto scrollbar-thin">
+            {allUsers
+              .filter((u) => !(activeRoom.members ?? []).some((m) => m.id === u.id))
+              .map((u) => {
+                const checked = inviteSelected.includes(u.id);
+                return (
+                  <label
+                    key={u.id}
+                    className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-[var(--bg-tertiary)]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleInviteUser(u.id)}
+                      className="accent-[var(--brand-primary)]"
+                    />
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-400 to-brand-600">
+                      {u.avatar ? (
+                        <img src={mediaUrl(u.avatar)} alt={u.username} className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-[9px] font-bold text-white">{u.username.slice(0, 2).toUpperCase()}</span>
+                      )}
+                    </span>
+                    <span className="truncate">{u.username}</span>
+                  </label>
+                );
+              })}
+            {allUsers.filter((u) => !(activeRoom.members ?? []).some((m) => m.id === u.id)).length === 0 && (
+              <div className="px-2 py-1 text-xs text-[var(--text-muted)]">Все пользователи уже здесь</div>
+            )}
+          </div>
+          {inviteMsg && <div className="mt-1 text-xs text-red-500">{inviteMsg}</div>}
+          <button
+            onClick={handleInvite}
+            disabled={inviteLoading || inviteSelected.length === 0}
+            className="btn-primary mt-2 w-full py-1.5 text-sm disabled:opacity-50"
+          >
+            {inviteLoading ? "Приглашаем..." : `Пригласить (${inviteSelected.length})`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

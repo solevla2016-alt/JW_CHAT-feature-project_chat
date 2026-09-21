@@ -11,7 +11,14 @@ interface CallHandlers {
 }
 
 const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    {
+      urls: ["turn:jwchat.duckdns.org:3478?transport=udp", "turn:jwchat.duckdns.org:3478?transport=tcp"],
+      username: "jwchat",
+      credential: "f017a94fa725f6a8b5f7613f40bf60e0",
+    },
+  ],
 };
 
 export function uid(): string {
@@ -117,6 +124,11 @@ function stopLocal(): void {
   }
 }
 
+let acceptedCallIds = new Set<string>();
+let offeredCallIds = new Set<string>();
+let hangupSentFor = "";
+let answeredCallIds = new Set<string>();
+
 export function cleanupCall(): void {
   const pc = window.__callPeer;
   if (pc) {
@@ -131,6 +143,10 @@ export function cleanupCall(): void {
 }
 
 function endWith(reason: string): void {
+  if (activeCallId && targetUsername && hangupSentFor !== activeCallId) {
+    hangupSentFor = activeCallId;
+    emit({ action: "call_hangup", target: targetUsername, call_id: activeCallId });
+  }
   cleanupCall();
   handlers.onPhase?.("ended", reason);
 }
@@ -191,6 +207,8 @@ export async function acceptCall(
   mode: CallMode,
   username: string
 ): Promise<MediaStream | null> {
+  if (acceptedCallIds.has(callId)) return myStream;
+  acceptedCallIds.add(callId);
   myUsername = username;
   activeCallId = callId;
   targetUsername = peerUsername;
@@ -221,6 +239,8 @@ export function cancelCall(peerUsername: string, callId: string): void {
 }
 
 export function hangupCall(peerUsername: string, callId: string): void {
+  if (hangupSentFor === callId) return;
+  hangupSentFor = callId;
   emit({ action: "call_hangup", target: peerUsername, call_id: callId });
   cleanupCall();
   handlers.onPhase?.("ended", "ended");
@@ -252,6 +272,8 @@ export function handleBusy(callId: string): void {
 
 export function handleCallAccept(peerUsername: string, callId: string): void {
   if (activeCallId !== callId) return;
+  if (offeredCallIds.has(callId)) return;
+  offeredCallIds.add(callId);
   handlers.onPhase?.("connecting");
   void sendOffer(peerUsername, callId);
 }
@@ -264,19 +286,17 @@ export async function handleCallOffer(
   if (activeCallId !== callId) return;
   const pc = getPeer();
   if (pc.remoteDescription || pc.signalingState !== "stable") {
-    cleanupCall();
-    activeCallId = callId;
-    targetUsername = from;
+    console.debug("[calls] duplicate/overlapping offer ignored", callId);
+    return;
   }
-  const fresh = getPeer();
-  await fresh.setRemoteDescription(sdp);
-  await flushPending(fresh);
-  if (myStream && fresh.getSenders().length === 0) {
-    addLocalTracks(fresh, myStream);
+  await pc.setRemoteDescription(sdp);
+  await flushPending(pc);
+  if (myStream && pc.getSenders().length === 0) {
+    addLocalTracks(pc, myStream);
   }
-  const answer = await fresh.createAnswer();
-  await fresh.setLocalDescription(answer);
-  emit({ action: "webrtc_answer", target: from, call_id: callId, sdp: fresh.localDescription });
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  emit({ action: "webrtc_answer", target: from, call_id: callId, sdp: pc.localDescription });
 }
 
 export async function handleCallAnswer(
@@ -287,6 +307,10 @@ export async function handleCallAnswer(
   if (activeCallId !== callId) return;
   const pc = window.__callPeer;
   if (!pc) return;
+  if (pc.remoteDescription) {
+    console.debug("[calls] duplicate answer ignored", callId);
+    return;
+  }
   targetUsername = from;
   await pc.setRemoteDescription(sdp);
   await flushPending(pc);
