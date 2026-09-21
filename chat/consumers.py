@@ -1,6 +1,7 @@
-﻿import asyncio
+import asyncio
 import json
 import os
+import sys
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -18,7 +19,7 @@ User = get_user_model()
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
-    """WebSocket consumer ╨┤╨╗╤П ╤З╨░╤В╨░ JOIN WORK!."""
+    """WebSocket consumer для чата JOIN WORK!."""
 
     redis_pool: aioredis.Redis | None = None
 
@@ -95,12 +96,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self._presence_task = asyncio.create_task(self._presence_heartbeat())
 
     async def _presence_heartbeat(self) -> None:
-        """╨Я╤А╨╛╨┤╨╗╨╡╨▓╨░╨╡╤В TTL presence-╨║╨╗╤О╤З╨░, ╨┐╨╛╨║╨░ ╤Б╨╛╨╡╨┤╨╕╨╜╨╡╨╜╨╕╨╡ ╨╢╨╕╨▓╨╛.
+        """Продлевает TTL presence-ключа, пока соединение живо.
 
-        ╨С╨╡╨╖ ╨╜╨╡╨│╨╛ ╨┐╨╛╨╗╤М╨╖╨╛╨▓╨░╤В╨╡╨╗╤М, ╨║╨╛╤В╨╛╤А╤Л╨╣ 5 ╨╝╨╕╨╜╤Г╤В ╨╜╨╕╤З╨╡╨│╨╛ ╨╜╨╡ ╨╛╤В╨┐╤А╨░╨▓╨╗╤П╨╡╤В (╨╜╨╡ ╨┐╨╕╤И╨╡╤В,
-        ╨╜╨╡ ╨┐╨╡╤З╨░╤В╨░╨╡╤В), ╨▓╤Л╨┐╨░╨┤╨░╨╡╤В ╨╕╨╖ ╤Б╨┐╨╕╤Б╨║╨░ ┬л╨▓ ╤Б╨╡╤В╨╕┬╗, ╤Е╨╛╤В╤П ╨▓╨╡╨▒-╤Б╨╛╨║╨╡╤В ╨╛╤В╨║╤А╤Л╤В.
-        ╨Я╨╛╨┐╤Г╤В╨╜╨╛ ╤А╨░╨╖ ╨▓ 10 ╨╝╨╕╨╜╤Г╤В ╤З╨╕╤Б╤В╨╕╤В presence:user_* ╨╛╤В ╨║╨░╨╜╨░╨╗╨╛╨▓ ╤Г╨╝╨╡╤А╤И╨╕╤Е
-        ╤Б╨╛╨╡╨┤╨╕╨╜╨╡╨╜╨╕╨╣ (╤В╨░╨║╨╕╨╡ ╤Б╨╡╤В╤Л ╨╜╨╡ ╨╕╨╝╨╡╤О╤В TTL ╨╕ ╨╕╨╜╨░╤З╨╡ ╨║╨╛╨┐╨╕╨╗╨╕╤Б╤М ╨▒╤Л ╨▓╨╡╤З╨╜╨╛).
+        Без него пользователь, который 5 минут ничего не отправляет (не пишет,
+        не печатает), выпадает из списка «в сети», хотя веб-сокет открыт.
+        Попутно раз в 10 минут чистит presence:user_* от каналов умерших
+        соединений (такие сеты не имеют TTL и иначе копились бы вечно).
         """
         try:
             while True:
@@ -110,16 +111,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self._prune_stale_user_sets(redis)
         except asyncio.CancelledError:
             pass
-        except Exception:  # noqa: S110 тАФ ╤Д╨╛╨╜╨╛╨▓╨░╤П ╨╖╨░╨┤╨░╤З╨░; ╤Б╨▒╨╛╨╣ ╨╜╨╡ ╨┤╨╛╨╗╨╢╨╡╨╜ ╤А╨╛╨╜╤П╤В╤М ╤Б╨╛╨╡╨┤╨╕╨╜╨╡╨╜╨╕╨╡
+        except Exception:  # noqa: S110 — фоновая задача; сбой не должен ронять соединение
             pass
 
     async def _prune_stale_user_sets(self, redis: aioredis.Redis) -> None:
-        """╨г╨┤╨░╨╗╤П╨╡╤В ╨╕╨╖ presence:user_* ╨║╨░╨╜╨░╨╗╤Л, ╤З╨╡╨╣ presence:chan:* ╤Г╨╢╨╡ ╨╕╤Б╤В╤С╨║.
+        """Удаляет из presence:user_* каналы, чей presence:chan:* уже истёк.
 
-        ╨Ъ╨░╨╜╨░╨╗ ┬л╨╢╨╕╨▓┬╗, ╨┐╨╛╨║╨░ ╤Б╤Г╤Й╨╡╤Б╤В╨▓╤Г╨╡╤В ╨║╨╗╤О╤З presence:chan:{channel} (╨╡╨│╨╛ ╨┐╤А╨╛╨┤╨╗╨╡╨▓╨░╨╡╤В
-        ╤Б╨╡╤А╨┤╤Ж╨╡╨▒╨╕╨╡╨╜╨╕╨╡). ╨б╨╡╤В presence:user_* ╤Б╨░╨╝ ╨┐╨╛ ╤Б╨╡╨▒╨╡ TTL ╨╜╨╡ ╨╕╨╝╨╡╨╡╤В, ╨┐╨╛╤Н╤В╨╛╨╝╤Г ╨▒╨╡╨╖
-        ╤Н╤В╨╛╨╣ ╤З╨╕╤Б╤В╨║╨╕ ╨╛╨╜ ╨║╨╛╨┐╨╕╨╗ ╨▒╤Л ╨║╨░╨╜╨░╨╗╤Л ╤Г╨╝╨╡╤А╤И╨╕╤Е/╨╜╨╡╨║╨╛╤А╤А╨╡╨║╤В╨╜╨╛ ╨╖╨░╨║╤А╤Л╤В╤Л╤Е ╤Б╨╛╨╡╨┤╨╕╨╜╨╡╨╜╨╕╨╣.
-        ╨б╨▓╨╕╨┐ ╨╕╨┤╤С╤В ╨┐╨╛╨┤ Redis-╨╗╨╛╨║╨╛╨╝: ╤А╨░╨╖ ╨▓ 10 ╨╝╨╕╨╜╤Г╤В ╨╡╨│╨╛ ╨▓╤Л╨┐╨╛╨╗╨╜╤П╨╡╤В ╤А╨╛╨▓╨╜╨╛ ╨╛╨┤╨╜╨╛ ╤Б╨╛╨╡╨┤╨╕╨╜╨╡╨╜╨╕╨╡.
+        Канал «жив», пока существует ключ presence:chan:{channel} (его продлевает
+        сердцебиение). Сет presence:user_* сам по себе TTL не имеет, поэтому без
+        этой чистки он копил бы каналы умерших/некорректно закрытых соединений.
+        Свип идёт под Redis-локом: раз в 10 минут его выполняет ровно одно соединение.
         """
         acquired = await redis.set("presence:prune:lock", "1", nx=True, ex=600)
         if not acquired:
@@ -185,7 +186,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         try:
             data = json.loads(text_data)
         except json.JSONDecodeError:
-            await self._send_error("╨Э╨╡╨║╨╛╤А╤А╨╡╨║╤В╨╜╤Л╨╣ JSON")
+            await self._send_error("Некорректный JSON")
             return
 
         action = data.get("action", "message")
@@ -232,7 +233,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         reply_to_id = data.get("reply_to_id")
 
         if await self._is_banned_user(user):
-            await self._send_error("╨Т╤Л ╨╖╨░╨▒╨░╨╜╨╡╨╜╤Л ╨▓ ╤Н╤В╨╛╨╣ ╨║╨╛╨╝╨╜╨░╤В╨╡")
+            await self._send_error("Вы забанены в этой комнате")
             return
 
         if not await self._can_dm(user, self.room):
@@ -241,7 +242,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if reply_to_id:
             reply_valid = await self._validate_reply(reply_to_id)
             if not reply_valid:
-                await self._send_error("╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨┤╨╗╤П ╨╛╤В╨▓╨╡╤В╨░ ╨╜╨╡ ╨╜╨░╨╣╨┤╨╡╨╜╨╛")
+                await self._send_error("Сообщение для ответа не найдено")
                 return
 
         attachment_type = data.get("attachment_type", "none")
@@ -316,14 +317,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
         new_text = data.get("text", "").strip()
 
         if not message_id or not new_text:
-            await self._send_error("message_id ╨╕ text ╨╛╨▒╤П╨╖╨░╤В╨╡╨╗╤М╨╜╤Л")
+            await self._send_error("message_id и text обязательны")
             return
 
         user = self.scope["user"]
         success = await self._edit_message(message_id, user.id, new_text)
 
         if not success:
-            await self._send_error("╨Э╨╡ ╤Г╨┤╨░╨╗╨╛╤Б╤М ╨╛╤В╤А╨╡╨┤╨░╨║╤В╨╕╤А╨╛╨▓╨░╤В╤М ╤Б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡")
+            await self._send_error("Не удалось отредактировать сообщение")
             return
 
         message = await self._get_message_by_id(message_id)
@@ -348,14 +349,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
         emoji = data.get("emoji", "").strip()
 
         if not message_id or not emoji:
-            await self._send_error("message_id ╨╕ emoji ╨╛╨▒╤П╨╖╨░╤В╨╡╨╗╤М╨╜╤Л")
+            await self._send_error("message_id и emoji обязательны")
             return
 
         user = self.scope["user"]
         toggled = await self._toggle_reaction(message_id, user.id, emoji)
 
         if toggled is None:
-            await self._send_error("╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╜╨╡ ╨╜╨░╨╣╨┤╨╡╨╜╨╛")
+            await self._send_error("Сообщение не найдено")
             return
 
         message = await self._get_message_by_id(message_id)
@@ -374,13 +375,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def _handle_ai_request(self, data: dict[str, Any]) -> None:
         prompt = (data.get("prompt") or "").strip()
         if not prompt:
-            await self._send_error("╨г╨║╨░╨╢╨╕╤В╨╡ ╨▓╨╛╨┐╤А╨╛╤Б ╨┤╨╗╤П AI")
+            await self._send_error("Укажите вопрос для AI")
             return
 
         await self._generate_ai_reply(prompt)
 
     async def _generate_ai_reply(self, prompt: str) -> None:
-        # ╨Я╨╛╨║╨░╨╖╤Л╨▓╨░╨╡╨╝ ╨╕╨╜╨┤╨╕╨║╨░╤В╨╛╤А "AI ╨┐╨╡╤З╨░╤В╨░╨╡╤В"
+        # Показываем индикатор "AI печатает"
         await self.channel_layer.group_send(
             self.room_group_name,
             {"type": "ai_typing", "is_typing": True},
@@ -429,13 +430,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def _handle_pin(self, data: dict[str, Any]) -> None:
         message_id = data.get("message_id")
         if not message_id:
-            await self._send_error("message_id ╨╛╨▒╤П╨╖╨░╤В╨╡╨╗╨╡╨╜")
+            await self._send_error("message_id обязателен")
             return
 
         user = self.scope["user"]
         pinned = await self._toggle_pin(message_id, user.id)
         if pinned is None:
-            await self._send_error("╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╜╨╡ ╨╜╨░╨╣╨┤╨╡╨╜╨╛")
+            await self._send_error("Сообщение не найдено")
             return
 
         await self.channel_layer.group_send(
@@ -451,15 +452,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def _handle_delete_message(self, data: dict[str, Any]) -> None:
         message_id = data.get("message_id")
         if not message_id:
-            await self._send_error("message_id ╨╛╨▒╤П╨╖╨░╤В╨╡╨╗╨╡╨╜")
+            await self._send_error("message_id обязателен")
             return
 
         deleted = await self._delete_message(message_id)
         if deleted is None:
-            await self._send_error("╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╜╨╡ ╨╜╨░╨╣╨┤╨╡╨╜╨╛")
+            await self._send_error("Сообщение не найдено")
             return
         if deleted is False:
-            await self._send_error("╨Э╨╡╨┤╨╛╤Б╤В╨░╤В╨╛╤З╨╜╨╛ ╨┐╤А╨░╨▓")
+            await self._send_error("Недостаточно прав")
             return
 
         await self.channel_layer.group_send(
@@ -594,12 +595,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def _handle_signal(self, data: dict[str, Any], signal_type: str) -> None:
         target = (data.get("target") or "").strip()
         if not target:
-            await self._send_error("╨г╨║╨░╨╢╨╕╤В╨╡ ╨┐╨╛╨╗╤Г╤З╨░╤В╨╡╨╗╤П ╤Б╨╕╨│╨╜╨░╨╗╨░ (target)")
+            await self._send_error("Укажите получателя сигнала (target)")
             return
 
         target_id = await self._get_user_id(target)
         if target_id is None:
-            await self._send_error("╨Я╨╛╨╗╤Г╤З╨░╤В╨╡╨╗╤М ╨╜╨╡ ╨╜╨░╨╣╨┤╨╡╨╜")
+            await self._send_error("Получатель не найден")
             return
 
         channels = await self._live_user_channels(target_id)
@@ -655,22 +656,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def _handle_call(self, data: dict[str, Any], call_action: str) -> None:
         import sys
         print(f"[DBG_HANDLE_CALL] {call_action} target={data.get('target')} call_id={data.get('call_id')}", file=sys.stderr, flush=True)
-        """╨а╨░╤Б╤Б╤З╨╕╤В╤Л╨▓╨░╨╡╤В ╤Б╨╛╤Б╤В╨╛╤П╨╜╨╕╨╡ ╨╖╨▓╨╛╨╜╨║╨░ ╨▓ Redis ╨╕ ╤А╨╡╨╗╨╡╨╕╤В call-╤Б╨╛╨▒╤Л╤В╨╕╤П ╤Ж╨╡╨╗╨╕.
+        """Рассчитывает состояние звонка в Redis и релеит call-события цели.
 
-        ╨Ъ╨╗╤О╤З╨╕:
-          call:act:{room_id}   тАФ SET ╨╕╨╝╤С╨╜ ╤Г╤З╨░╤Б╤В╨╜╨╕╨║╨╛╨▓ ╨░╨║╤В╨╕╨▓╨╜╨╛╨│╨╛ ╨╖╨▓╨╛╨╜╨║╨░ ╨▓ ╨║╨╛╨╝╨╜╨░╤В╨╡;
+        Ключи:
+          call:act:{room_id}   — SET имён участников активного звонка в комнате;
           call:meta:{call_id}  тАФ JSON {room_id, caller/callee, caller_id/callee_id};
-          call:user:{user_id}  тАФ SET call_id ╨░╨║╤В╨╕╨▓╨╜╤Л╤Е ╨╖╨▓╨╛╨╜╨║╨╛╨▓ ╨┐╨╛╨╗╤М╨╖╨╛╨▓╨░╤В╨╡╨╗╤П.
+          call:user:{user_id}  — SET call_id активных звонков пользователя.
         """
         target = (data.get("target") or "").strip()
         call_id = (data.get("call_id") or "").strip()
         if not target or not call_id:
-            await self._send_error("╨г╨║╨░╨╢╨╕╤В╨╡ ╨┐╨╛╨╗╤Г╤З╨░╤В╨╡╨╗╤П ╨╕ call_id")
+            await self._send_error("Укажите получателя и call_id")
             return
 
         target_id = await self._get_user_id(target)
         if target_id is None:
-            await self._send_error("╨Я╨╛╨╗╤Г╤З╨░╤В╨╡╨╗╤М ╨╜╨╡ ╨╜╨░╨╣╨┤╨╡╨╜")
+            await self._send_error("Получатель не найден")
             return
 
         redis = await self._get_redis()
@@ -736,20 +737,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
             try:
                 await self.channel_layer.send(channel, {"type": "call_relay", "payload": payload})
                 return
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[CALL_RELAY] failed to deliver to channel {channel}: {exc}", file=sys.stderr, flush=True)
         channels = await self._live_user_channels(target_id)
         for channel in channels:
             await self.channel_layer.send(channel, {"type": "call_relay", "payload": payload})
 
     async def _live_user_channels(self, user_id: int) -> list[str]:
-        import sys
-        print(f"[DBG_CHANNELS] user_id={user_id}", file=sys.stderr, flush=True)
-        """╨Ц╨╕╨▓╤Л╨╡ ╨║╨░╨╜╨░╨╗╤Л ╨┐╨╛╨╗╤М╨╖╨╛╨▓╨░╤В╨╡╨╗╤П; ╨║╨░╨╜╨░╨╗╤Л ╤Г╨╝╨╡╤А╤И╨╕╤Е ╤Б╨╛╨╡╨┤╨╕╨╜╨╡╨╜╨╕╨╣ ╤Г╨┤╨░╨╗╤П╨╡╤В ╨╕╨╖ ╤Б╨╡╤В╨░.
+        """Живые каналы пользователя; каналы умерших соединений удаляет из сета.
 
-        ╨Ъ╨░╨╜╨░╨╗ ╤Б╤З╨╕╤В╨░╨╡╤В╤Б╤П ╨╢╨╕╨▓╤Л╨╝, ╨┐╨╛╨║╨░ ╤Б╤Г╤Й╨╡╤Б╤В╨▓╤Г╨╡╤В ╨║╨╗╤О╤З presence:chan:{channel}
-        (╨╡╨│╨╛ ╨┐╤А╨╛╨┤╨╗╨╡╨▓╨░╨╡╤В ╤Б╨╡╤А╨┤╤Ж╨╡╨▒╨╕╨╡╨╜╨╕╨╡ ╨║╨░╨╢╨┤╤Л╨╡ 60 ╤Б╨╡╨║╤Г╨╜╨┤). ╨Ь╤С╤А╤В╨▓╤Л╨╡ ╨║╨░╨╜╨░╨╗╤Л ╤Г╨▒╨╕╤А╨░╨╡╨╝
-        ╤Б╤А╨░╨╖╤Г, ╤З╤В╨╛╨▒╤Л ╤А╨╡╨╗╨╡╨╣ ╨╜╨╡ ╤Б╨╗╨░╨╗ ╨▓ ╨╜╨╕╤Е ╨╕ ╤З╤В╨╛╨▒╤Л presence:user_* ╨╜╨╡ ╤А╨░╨╖╨┤╤Г╨▓╨░╨╗╤Б╤П.
+        Канал считается живым, пока существует ключ presence:chan:{channel}
+        (его продлевает сердцебиение каждые 60 секунд). Мёртвые каналы убиваем
+        сразу, чтобы релей не слал в них и чтобы presence:user_* не раздувался.
         """
         redis = await self._get_redis()
         key = f"presence:user_{user_id}"
@@ -768,7 +767,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return live
 
     async def _send_call_busy(self, caller: str, call_id: str, busy_username: str) -> None:
-        """╨Ю╤В╨▓╨╡╤З╨░╨╡╤В ╨▓╤Л╨╖╤Л╨▓╨░╤О╤Й╨╡╨╝╤Г, ╤З╤В╨╛ ╤Ж╨╡╨╗╤М ╨╖╨░╨╜╤П╤В╨░ (╨▒╨╡╨╖ ╤А╨╡╨╗╨╡╤П ╤Б╨░╨╝╨╛╨╣ ╤Ж╨╡╨╗╨╕)."""
+        """Отвечает вызывающему, что цель занята (без релея самой цели)."""
         caller_id = await self._get_user_id(caller)
         if caller_id is None:
             return
@@ -780,7 +779,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             })
 
     async def _end_call(self, redis: aioredis.Redis, call_id: str) -> None:
-        """╨Я╤А╨╕╨▓╨╛╨┤╨╕╤В Redis-╤Б╨╛╤Б╤В╨╛╤П╨╜╨╕╨╡ ╨╖╨▓╨╛╨╜╨║╨░ ╨▓ ╨┐╨╛╤А╤П╨┤╨╛╨║ ╨┐╨╛╤Б╨╗╨╡ ╨╛╨║╨╛╨╜╤З╨░╨╜╨╕╤П."""
+        """Приводит Redis-состояние звонка в порядок после окончания."""
         raw = await redis.get(f"call:meta:{call_id}")
         try:
             meta = json.loads(raw) if raw else None
@@ -798,7 +797,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await redis.delete(f"call:meta:{call_id}")
 
     async def _cleanup_call_on_disconnect(self, user) -> None:
-        """╨Х╤Б╨╗╨╕ ╨┐╨╛╨╗╤М╨╖╨╛╨▓╨░╤В╨╡╨╗╤М ╤Г╤И╤С╨╗ ╨╕╨╖ ╨║╨╛╨╝╨╜╨░╤В╤Л ╨▓╨╛ ╨▓╤А╨╡╨╝╤П ╨╖╨▓╨╛╨╜╨║╨░ тАФ ╤Г╨▓╨╡╨┤╨╛╨╝╨╕╤В╤М ╤Б╨╛╨▒╨╡╤Б╨╡╨┤╨╜╨╕╨║╨░."""
+        """Если пользователь ушёл из комнаты во время звонка — уведомить собеседника."""
         redis = await self._get_redis()
         call_ids = await redis.smembers(f"call:user:{user.id}")
         if not call_ids:

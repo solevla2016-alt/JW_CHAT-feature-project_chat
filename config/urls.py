@@ -1,6 +1,5 @@
 import re
 
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.static import serve
@@ -19,7 +18,7 @@ urlpatterns = [
 # напрямую через serve.
 urlpatterns += [
     re_path(
-        r"^%s(?P<path>.*)$" % re.escape(settings.MEDIA_URL.lstrip("/")),
+        r"^{}(?P<path>.*)$".format(re.escape(settings.MEDIA_URL.lstrip("/"))),
         serve,
         {"document_root": settings.MEDIA_ROOT},
     )
