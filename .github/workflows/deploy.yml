@@ -23,7 +23,7 @@ jobs:
         run: docker build -t jwchat-backend:latest -f Dockerfile.backend .
 
       - name: Save images to tar
-        run: docker save jwchat-backend:latest jwchat-frontend:latest -o jwchat-images.tar
+        run: docker save jwchat-backend:latest jwchat-frontend:latest | gzip > jwchat-images.tar.gz
 
       - name: Upload images to VDS
         env:
@@ -32,7 +32,12 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$VDS_SSH_KEY_B64" | base64 -d > ~/.ssh/vds_key
           chmod 600 ~/.ssh/vds_key
-          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -P ${{ secrets.VDS_PORT || 22 }} jwchat-images.tar ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }}:/tmp/jwchat-images.tar
+          for i in 1 2 3; do
+            scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -P ${{ secrets.VDS_PORT || 22 }} jwchat-images.tar.gz ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }}:/tmp/jwchat-images.tar.gz && break
+            echo "scp attempt $i failed, retrying..."
+            sleep 3
+          done
+          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -P ${{ secrets.VDS_PORT || 22 }} docker-compose.vds.yml ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }}:/opt/jwchat/docker-compose.vds.yml
         timeout-minutes: 15
 
       - name: Load and redeploy on VDS
@@ -47,7 +52,7 @@ jobs:
           script: |
             set -e
             cd /opt/jwchat
-            docker load -i /tmp/jwchat-images.tar
+            docker load -i /tmp/jwchat-images.tar.gz
             docker compose -f docker-compose.vds.yml up -d
             docker compose -f docker-compose.vds.yml ps
 
