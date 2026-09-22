@@ -26,16 +26,12 @@ jobs:
         run: docker save jwchat-backend:latest jwchat-frontend:latest -o jwchat-images.tar
 
       - name: Upload images to VDS
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.VDS_HOST }}
-          username: ${{ secrets.VDS_USER }}
-          key: ${{ secrets.VDS_SSH_KEY }}
-          port: ${{ secrets.VDS_PORT || 22 }}
-          source: "jwchat-images.tar"
-          target: "/tmp"
-          overwrite: true
-          timeout: 600s
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VDS_SSH_KEY }}" > ~/.ssh/vds_key
+          chmod 600 ~/.ssh/vds_key
+          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -P ${{ secrets.VDS_PORT || 22 }} jwchat-images.tar ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }}:/tmp/jwchat-images.tar
+        timeout-minutes: 15
 
       - name: Load and redeploy on VDS
         uses: appleboy/ssh-action@v1.0.3
