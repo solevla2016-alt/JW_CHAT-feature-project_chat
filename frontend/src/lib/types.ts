@@ -143,4 +143,9 @@ export interface WebSocketMessage {
   signal_type?: string;
   call_id?: string;
   mode?: CallMode;
+  room_id?: number;
+  room_name?: string;
+  room_type?: string;
+  server_id?: number | null;
+  server_name?: string | null;
 }

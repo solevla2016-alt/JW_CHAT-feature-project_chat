@@ -761,6 +761,35 @@ class TestRoomApi:
         )
         assert resp.status_code == 403
 
+    def test_add_member_joins_server(self, api_client, owner, stranger, member):
+        from .models import Server
+
+        server = Server.objects.create(name="Test server", owner=owner, description="d")
+        room = ChatRoom.objects.create(name="room-in-server", owner=owner, room_type="group", server=server)
+        room.members.add(owner)
+        server.members.add(owner)
+        api_client.force_authenticate(user=owner)
+        resp = api_client.post(
+            f"/api/chat/rooms/{room.id}/members/",
+            {"user_id": stranger.id},
+            format="json",
+        )
+        assert resp.status_code == 200
+        assert stranger in room.members.all()
+        assert stranger in server.members.all()
+        assert server.rooms.filter(id=room.id).exists()
+
+    def test_add_member_no_server(self, api_client, group_room, owner, stranger):
+        assert group_room.server is None
+        api_client.force_authenticate(user=owner)
+        resp = api_client.post(
+            f"/api/chat/rooms/{group_room.id}/members/",
+            {"user_id": stranger.id},
+            format="json",
+        )
+        assert resp.status_code == 200
+        assert stranger in group_room.members.all()
+
     def test_upload_image(self, api_client, group_room, member):
         from io import BytesIO
 

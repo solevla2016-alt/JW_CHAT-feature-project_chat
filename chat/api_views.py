@@ -200,6 +200,11 @@ def room_add_member_view(request: Request, room_id: int) -> Response:
         return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
 
     room.members.add(user)
+
+    if room.server_id and not room.server.members.filter(id=user.id).exists():
+        room.server.members.add(user)
+
+    _notify_room_added(user, room)
     return Response({"success": True})
 
 
@@ -429,3 +434,42 @@ def _broadcast_message_deleted(room: ChatRoom, message_id: int) -> None:
                 "id": message_id,
             },
         )
+
+
+def _notify_room_added(user, room: ChatRoom) -> None:
+    """Шлёт online-клиентам пользователя событие о подключении к комнате/серверу."""
+    import os
+
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+
+    try:
+        import redis as sync_redis
+
+        r = sync_redis.from_url(
+            f"redis://{os.getenv('REDIS_HOST', '127.0.0.1')}:{os.getenv('REDIS_PORT', '6379')}",
+            decode_responses=True,
+        )
+        channels = list(r.smembers(f"presence:user_{user.id}"))
+    except Exception:
+        return
+
+    for channel in channels:
+        try:
+            async_to_sync(channel_layer.send)(
+                channel,
+                {
+                    "type": "room_added",
+                    "room_id": room.id,
+                    "room_name": room.name,
+                    "room_type": room.room_type,
+                    "server_id": room.server_id,
+                    "server_name": room.server.name if room.server_id else None,
+                },
+            )
+        except Exception:  # noqa: S110 — одиночный канал не должен ломать рассылку
+            pass

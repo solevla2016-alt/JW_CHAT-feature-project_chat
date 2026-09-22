@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useChatStore } from "./store";
-import { WS_URL } from "./api";
-import type { CallMode, Message, WebSocketMessage } from "./types";
+import { API_URL, WS_URL } from "./api";
+import type { CallMode, ChatRoom, Message, Server, WebSocketMessage } from "./types";
 import {
   handleAnswer,
   handleCandidate,
@@ -41,6 +41,8 @@ export function useWebSocket(roomName: string | null) {
     updateMessage,
     setMessages,
     setOnlineUsers,
+    setRooms,
+    setServers,
     addTypingUser,
     removeTypingUser,
     setMessageReactions,
@@ -48,6 +50,19 @@ export function useWebSocket(roomName: string | null) {
     setMessagePinned,
     setCall,
   } = useChatStore();
+
+  const refreshLists = useCallback(async () => {
+    try {
+      const [rooms, servers] = await Promise.all([
+        fetch(`${API_URL}/chat/rooms/`, { credentials: "include" }).then((r) => r.json()),
+        fetch(`${API_URL}/chat/servers/`, { credentials: "include" }).then((r) => r.json()),
+      ]);
+      setRooms(rooms as ChatRoom[]);
+      setServers(servers as Server[]);
+    } catch {
+      // ignore
+    }
+  }, [API_URL, setRooms, setServers]);
 
   const connect = useCallback(() => {
     if (!roomName) return;
@@ -133,6 +148,11 @@ export function useWebSocket(roomName: string | null) {
               )
             );
           }
+          break;
+
+        case "room_added":
+          console.debug("[ws] room_added:", data.room_name);
+          void refreshLists();
           break;
 
         case "message_edited":
@@ -278,7 +298,7 @@ export function useWebSocket(roomName: string | null) {
     ws.onerror = (error) => {
       console.debug("[ws] WebSocket error:", error);
     };
-  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned, setCall]);
+  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, setRooms, setServers, refreshLists, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned, setCall]);
 
   useEffect(() => {
     connect();

@@ -510,6 +510,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "username": event["username"],
         }))
 
+    async def room_added(self, event: dict[str, Any]) -> None:
+        await self.send(text_data=json.dumps({
+            "type": "room_added",
+            "room_id": event.get("room_id"),
+            "room_name": event.get("room_name"),
+            "room_type": event.get("room_type"),
+            "server_id": event.get("server_id"),
+            "server_name": event.get("server_name"),
+        }))
+
     async def online_users(self, event: dict[str, Any]) -> None:
         await self.send(text_data=json.dumps({
             "type": "online_users",
