@@ -30,9 +30,10 @@ jobs:
           VDS_SSH_KEY_B64: ${{ secrets.VDS_SSH_KEY_B64 }}
         run: |
           set -x
-          mkdir -p ~/.ssh
+          echo "B64_LEN=${#VDS_SSH_KEY_B64}"
+          echo "B64_LAST=${VDS_SSH_KEY_B64: -6}"
           printf '%s' "$VDS_SSH_KEY_B64" | base64 -d > ~/.ssh/vds_key
-          chmod 600 ~/.ssh/vds_key
+          wc -c ~/.ssh/vds_key
           ssh-keygen -lf ~/.ssh/vds_key || echo "KEY INVALID"
           scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -P ${{ secrets.VDS_PORT || 22 }} jwchat-images.tar ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }}:/tmp/jwchat-images.tar
         timeout-minutes: 15
