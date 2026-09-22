@@ -23,7 +23,7 @@ jobs:
         run: docker build -t jwchat-backend:latest -f Dockerfile.backend .
 
       - name: Save images to tar
-        run: docker save jwchat-backend:latest jwchat-frontend:latest -o /tmp/jwchat-images.tar
+        run: docker save jwchat-backend:latest jwchat-frontend:latest -o jwchat-images.tar
 
       - name: Upload images to VDS
         uses: appleboy/scp-action@v0.1.7
@@ -32,8 +32,10 @@ jobs:
           username: ${{ secrets.VDS_USER }}
           key: ${{ secrets.VDS_SSH_KEY }}
           port: ${{ secrets.VDS_PORT || 22 }}
-          source: "/tmp/jwchat-images.tar"
+          source: "jwchat-images.tar"
           target: "/tmp"
+          overwrite: true
+          timeout: 600s
 
       - name: Load and redeploy on VDS
         uses: appleboy/ssh-action@v1.0.3
