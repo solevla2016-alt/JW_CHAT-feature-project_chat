@@ -35,23 +35,15 @@ jobs:
           chmod 600 ~/.ssh/vds_key
           ls -lh jwchat-images.tar.gz
           echo "Uploading jwchat-images.tar.gz (may take a while)..."
-          if command -v rsync >/dev/null 2>&1; then
-            for i in 1 2 3 4 5; do
-              if rsync -aVz --partial --progress -e "ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -P ${{ secrets.VDS_PORT || 22 }}" jwchat-images.tar.gz ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }}:/tmp/jwchat-images.tar.gz; then
-                break
-              fi
-              echo "rsync attempt $i failed, retrying..."
-              sleep 10
-            done
-          else
-            for i in 1 2 3 4 5; do
-              if scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -P ${{ secrets.VDS_PORT || 22 }} jwchat-images.tar.gz ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }}:/tmp/jwchat-images.tar.gz; then
-                break
-              fi
-              echo "scp attempt $i failed, retrying..."
-              sleep 10
-            done
-          fi
+          for i in 1 2 3 4 5; do
+            if scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -P ${{ secrets.VDS_PORT || 22 }} jwchat-images.tar.gz ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }}:/tmp/jwchat-images.tar.gz; then
+              echo "upload OK"
+              break
+            fi
+            echo "scp attempt $i failed, retrying..."
+            sleep 10
+          done
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -p ${{ secrets.VDS_PORT || 22 }} ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }} "ls -lh /tmp/jwchat-images.tar.gz && gzip -t /tmp/jwchat-images.tar.gz && echo GZIP_OK"
           scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -P ${{ secrets.VDS_PORT || 22 }} docker-compose.vds.yml ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }}:/opt/jwchat/docker-compose.vds.yml
         timeout-minutes: 45
 
