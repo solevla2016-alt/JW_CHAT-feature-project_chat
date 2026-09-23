@@ -14,9 +14,9 @@ const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     {
-      urls: ["turn:jwchat.duckdns.org:3478?transport=udp", "turn:jwchat.duckdns.org:3478?transport=tcp"],
-      username: "jwchat",
-      credential: "f017a94fa725f6a8b5f7613f40bf60e0",
+      urls: ["turn:5.35.83.69:3478?transport=udp", "turn:5.35.83.69:3478?transport=tcp"],
+      username: "webrtc",
+      credential: "jwchatturn1790185471",
     },
   ],
 };

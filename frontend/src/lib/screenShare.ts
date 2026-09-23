@@ -9,7 +9,19 @@ interface ScreenShareHandlers {
 }
 
 const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    {
+      urls: "turn:5.35.83.69:3478?transport=udp",
+      username: "webrtc",
+      credential: "jwchatturn1790185471",
+    },
+    {
+      urls: "turn:5.35.83.69:3478?transport=tcp",
+      username: "webrtc",
+      credential: "jwchatturn1790185471",
+    },
+  ],
 };
 
 let sender: SignalSender | null = null;
