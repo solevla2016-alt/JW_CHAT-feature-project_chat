@@ -906,15 +906,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
         all_ids = list(
             Message.objects.filter(room_id=self.room.id).values_list("id", "user_id")
         )
-        other_msgs = [(m_id, u_id) for m_id, u_id in all_ids]
         for uid in member_ids:
             read_ids = read_statuses.get(uid, set())
             if not read_ids:
-                result[uid] = sum(1 for _, u_id in other_msgs if u_id != uid)
+                result[uid] = sum(1 for _, u_id in all_ids if u_id != uid)
                 continue
             last_read = max(read_ids)
             result[uid] = sum(
-                1 for m_id, u_id in other_msgs if u_id != uid and m_id > last_read
+                1 for m_id, u_id in all_ids if u_id != uid and m_id > last_read
             )
         return result
 
