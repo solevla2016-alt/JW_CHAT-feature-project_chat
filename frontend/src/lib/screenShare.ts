@@ -176,8 +176,12 @@ export async function handleOffer(from: string, sdp: RTCSessionDescriptionInit):
 export async function handleAnswer(from: string, sdp: RTCSessionDescriptionInit): Promise<void> {
   const pc = peers.get(from);
   if (!pc) return;
+  const m = (sdp.sdp ?? "").match(/m=(\w+) \d+ UDP/g) ?? [];
+  const dirs = (sdp.sdp ?? "").match(/a=(\w+only|inactive|sendrecv)/g) ?? [];
+  console.debug("[screenShare] handleAnswer from", from, "signaling:", pc.signalingState, "mLines:", m.length, "dirs:", dirs.join(","));
   await pc.setRemoteDescription(sdp);
   await flushPending(from, pc);
+  console.debug("[screenShare] handleAnswer after setRD receivers:", pc.getReceivers().length, "tracks:", pc.getReceivers().map((r) => r.track.kind).join(","));
 }
 
 export async function handleCandidate(from: string, candidate: RTCIceCandidateInit): Promise<void> {
