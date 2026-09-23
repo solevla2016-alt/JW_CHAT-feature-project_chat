@@ -599,6 +599,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     # --- Screen share / WebRTC signaling ---
 
     async def _handle_screen_share_start(self) -> None:
+        print(f"[SS] START by {self.scope['user'].username} room={self.room.id} chan={self.channel_name}", flush=True)
         redis = await self._get_redis()
         await redis.set(self.screen_key, self.channel_name)
         await self.channel_layer.group_send(
@@ -620,6 +621,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def _handle_signal(self, data: dict[str, Any], signal_type: str) -> None:
         target = (data.get("target") or "").strip()
+        print(f"[SS] signal {signal_type} from={self.scope['user'].username} to={target!r}", flush=True)
         if not target:
             await self._send_error("Укажите получателя сигнала (target)")
             return
@@ -663,6 +665,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return user.id if user else None
 
     async def screen_start(self, event: dict[str, Any]) -> None:
+        print(f"[SS] screen_start -> {self.scope['user'].username} from={event['broadcaster']} chan={self.channel_name} sendchan={event.get('from_channel')}", flush=True)
         if event.get("from_channel") == self.channel_name:
             return
         await self.send(text_data=json.dumps({
@@ -674,7 +677,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"type": "screen_stop"}))
 
     async def signal_relay(self, event: dict[str, Any]) -> None:
-        await self.send(text_data=json.dumps(event["payload"]))
+        payload = event["payload"]
+        print(f"[SS] relay {payload.get('signal_type')} -> {self.scope['user'].username} from={payload.get('from')} sdp={'yes' if payload.get('sdp') else 'no'} cand={'yes' if payload.get('candidate') else 'no'}", flush=True)
+        await self.send(text_data=json.dumps(payload))
 
     async def call_relay(self, event: dict[str, Any]) -> None:
         await self.send(text_data=json.dumps(event["payload"]))
