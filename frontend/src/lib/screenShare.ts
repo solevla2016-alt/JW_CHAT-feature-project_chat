@@ -153,6 +153,7 @@ async function acceptScreenShare(broadcaster: string): Promise<void> {
 }
 
 export async function handleOffer(from: string, sdp: RTCSessionDescriptionInit): Promise<void> {
+  console.debug("[screenShare] handleOffer from", from, "myStream:", Boolean(myStream), "myTracks:", myStream?.getTracks().length ?? 0);
   let pc = getPeer(from);
   if (pc.remoteDescription || pc.signalingState !== "stable") {
     dropPeer(from);
@@ -165,8 +166,10 @@ export async function handleOffer(from: string, sdp: RTCSessionDescriptionInit):
       pc.addTrack(track, myStream);
     }
   }
+  console.debug("[screenShare] handleOffer senders after add:", pc.getSenders().length, "signaling:", pc.signalingState);
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
+  console.debug("[screenShare] handleOffer answer sent tracks:", pc.getSenders().length, "mnl:", (answer.sdp ?? "").match(/m=(\w+) \d+ UDP/g)?.[0]);
   emit({ action: "webrtc_answer", target: from, sdp: pc.localDescription });
 }
 
