@@ -32,6 +32,7 @@ interface ChatState {
   setUser: (user: User | null) => void;
   setRooms: (rooms: ChatRoom[]) => void;
   setServers: (servers: Server[]) => void;
+  updateRoomMeta: (roomId: number, meta: { last_message: ChatRoom["last_message"]; unread_count: number }) => void;
   setActiveServer: (server: Server | null) => void;
   setActiveRoom: (room: ChatRoom | null) => void;
   setRoomMembers: (roomId: number, members: ChatRoomMember[]) => void;
@@ -81,6 +82,10 @@ export const useChatStore = create<ChatState>((set) => ({
   setUser: (user) => set({ user }),
   setRooms: (rooms) => set({ rooms }),
   setServers: (servers) => set({ servers }),
+  updateRoomMeta: (roomId, meta) =>
+    set((state) => ({
+      rooms: state.rooms.map((r) => (r.id === roomId ? { ...r, ...meta } : r)),
+    })),
   setActiveServer: (server) => set({ activeServer: server, activeRoom: null, messages: [] }),
   setActiveRoom: (room) => set({ activeRoom: room, messages: [], typingUsers: [], screenSession: null }),
   setRoomMembers: (roomId, members) =>

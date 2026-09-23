@@ -418,6 +418,21 @@ class TestModerationWs:
         await owner_client.disconnect()
         await member_client.disconnect()
 
+    async def test_room_update_reaches_member(self, group_room, owner, member, ws_connect):
+        owner_client, _ = await ws_connect(owner, group_room.name)
+        member_client, _ = await ws_connect(member, group_room.name)
+        await _drain_until(owner_client, "history")
+        await _drain_until(member_client, "history")
+        await owner_client.send_json_to({"action": "message", "message": "ping unread"})
+        await _drain_until(member_client, "message", timeout=3)
+        payload = await _drain_until(member_client, "room_update", timeout=3)
+        assert payload["room_id"] == group_room.id
+        assert payload["unread_count"] >= 1
+        assert payload["last_message"]["text"] == "ping unread"
+        assert payload["last_message"]["username"] == owner.username
+        await owner_client.disconnect()
+        await member_client.disconnect()
+
     async def test_edit_broadcast(self, group_room, owner, member, owner_message, ws_connect):
         owner_client, _ = await ws_connect(owner, group_room.name)
         member_client, _ = await ws_connect(member, group_room.name)

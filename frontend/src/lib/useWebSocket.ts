@@ -43,6 +43,7 @@ export function useWebSocket(roomName: string | null) {
     setOnlineUsers,
     setRooms,
     setServers,
+    updateRoomMeta,
     addTypingUser,
     removeTypingUser,
     setMessageReactions,
@@ -153,6 +154,15 @@ export function useWebSocket(roomName: string | null) {
         case "room_added":
           console.debug("[ws] room_added:", data.room_name);
           void refreshLists();
+          break;
+
+        case "room_update":
+          if (data.room_id !== undefined) {
+            updateRoomMeta(data.room_id, {
+              last_message: data.last_message ?? null,
+              unread_count: data.unread_count ?? 0,
+            });
+          }
           break;
 
         case "message_edited":
@@ -298,7 +308,7 @@ export function useWebSocket(roomName: string | null) {
     ws.onerror = (error) => {
       console.debug("[ws] WebSocket error:", error);
     };
-  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, setRooms, setServers, refreshLists, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned, setCall]);
+  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, setRooms, setServers, updateRoomMeta, refreshLists, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned, setCall]);
 
   useEffect(() => {
     connect();

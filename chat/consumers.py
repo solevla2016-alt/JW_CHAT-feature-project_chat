@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sys
+from collections import defaultdict
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -71,8 +72,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
         print(f"[WS] open: {user.username} room={self.room.name!r}", flush=True)
 
         self.room_group_name = f"chat_{self.room.id}"
+        self.user_group_name = f"user_{user.id}"
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.channel_layer.group_add(self.user_group_name, self.channel_name)
         await self.accept()
 
         redis = await self._get_redis()
@@ -168,6 +171,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self._broadcast_online_users()
 
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        user_group = getattr(self, "user_group_name", None)
+        if user_group:
+            await self.channel_layer.group_discard(user_group, self.channel_name)
 
         redis = await self._get_redis()
         if await redis.get(self.screen_key) == self.channel_name:
@@ -286,6 +292,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 "transcription": message.transcription,
             },
         )
+
+        await self._notify_room_update(message)
 
         if (
             message.attachment_type == "none"
@@ -518,6 +526,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "room_type": event.get("room_type"),
             "server_id": event.get("server_id"),
             "server_name": event.get("server_name"),
+        }))
+
+    async def room_update(self, event: dict[str, Any]) -> None:
+        await self.send(text_data=json.dumps({
+            "type": "room_update",
+            "room_id": event.get("room_id"),
+            "last_message": event.get("last_message"),
+            "unread_count": event.get("unread_count"),
         }))
 
     async def online_users(self, event: dict[str, Any]) -> None:
@@ -832,6 +848,75 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     })
 
     # --- Helpers ---
+
+    async def _notify_room_update(self, message: Message) -> None:
+        """Шлёт обновление last_message/unread_count остальным участникам комнаты.
+
+        Участник, который не находится сейчас в этой комнате, не подключён к её
+        группе chat_{id}, поэтому не получает событие `message`. Здесь же событие
+        приходит в его персональную группу user_{id} — фронт обновляет список
+        комнат (last_message и счётчик непрочитанных) без перезагрузки.
+        """
+        member_ids = await self._room_member_ids()
+        member_ids.discard(self.scope["user"].id)
+        if not member_ids:
+            return
+
+        last_message = await self._room_last_message_payload()
+        unread_map = await self._room_unread_map(member_ids)
+
+        for uid in member_ids:
+            await self.channel_layer.group_send(
+                f"user_{uid}",
+                {
+                    "type": "room_update",
+                    "room_id": self.room.id,
+                    "last_message": last_message,
+                    "unread_count": unread_map.get(uid, 0),
+                },
+            )
+
+    @database_sync_to_async
+    def _room_member_ids(self) -> set[int]:
+        ids = set(self.room.members.values_list("id", flat=True))
+        if self.room.owner_id:
+            ids.add(self.room.owner_id)
+        return ids
+
+    @database_sync_to_async
+    def _room_last_message_payload(self) -> dict | None:
+        last = Message.objects.filter(room_id=self.room.id).select_related("user").order_by("-created_at").first()
+        if not last:
+            return None
+        return {
+            "text": last.text[:100],
+            "username": last.user.username,
+            "created_at": last.created_at.isoformat(),
+        }
+
+    @database_sync_to_async
+    def _room_unread_map(self, member_ids: set[int]) -> dict[int, int]:
+        result: dict[int, int] = {}
+        read_statuses: dict[int, set[int]] = defaultdict(set)
+        for m_id, u_id in ReadStatus.objects.filter(
+            message__room_id=self.room.id
+        ).values_list("message_id", "user_id"):
+            read_statuses[u_id].add(m_id)
+
+        all_ids = list(
+            Message.objects.filter(room_id=self.room.id).values_list("id", "user_id")
+        )
+        other_msgs = [(m_id, u_id) for m_id, u_id in all_ids]
+        for uid in member_ids:
+            read_ids = read_statuses.get(uid, set())
+            if not read_ids:
+                result[uid] = sum(1 for _, u_id in other_msgs if u_id != uid)
+                continue
+            last_read = max(read_ids)
+            result[uid] = sum(
+                1 for m_id, u_id in other_msgs if u_id != uid and m_id > last_read
+            )
+        return result
 
     async def _send_history(self) -> None:
         messages = await self._get_messages(self.room.id)

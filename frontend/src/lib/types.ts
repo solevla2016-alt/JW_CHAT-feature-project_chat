@@ -148,4 +148,10 @@ export interface WebSocketMessage {
   room_type?: string;
   server_id?: number | null;
   server_name?: string | null;
+  last_message?: {
+    text: string;
+    username: string;
+    created_at: string;
+  } | null;
+  unread_count?: number;
 }
