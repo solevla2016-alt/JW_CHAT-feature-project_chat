@@ -220,12 +220,10 @@ export function ChatWindow() {
   }, [messages.length, activeRoom?.id]);
 
   useEffect(() => {
-    if (!activeRoom) return;
+    if (!activeRoom || messages.length === 0) return;
     resetRoomUnread(activeRoom.id);
-    if (messages.length > 0) {
-      const lastId = messages[messages.length - 1].id;
-      sendRead(lastId);
-    }
+    const lastId = messages[messages.length - 1].id;
+    sendRead(lastId);
   }, [activeRoom?.id, messages.length, activeRoom, resetRoomUnread, sendRead]);
 
   const meUsername = user?.username ?? "";

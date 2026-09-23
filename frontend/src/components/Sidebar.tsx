@@ -659,8 +659,15 @@ onClick={async () => {
                         : room.description || "Нет сообщений"}
                     </div>
                   </div>
-                  {!isActive && !!room.unread_count && (
-                    <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary)] px-1.5 text-[10px] font-bold text-white">
+                  {!!room.unread_count && (
+                    <span
+                      className={cn(
+                        "flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white",
+                        isActive
+                          ? "animate-pulse bg-red-500 shadow-sm ring-1 ring-white/40"
+                          : "bg-[var(--brand-primary)]"
+                      )}
+                    >
                       {room.unread_count}
                     </span>
                   )}
