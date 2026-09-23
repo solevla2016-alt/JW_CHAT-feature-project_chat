@@ -154,6 +154,18 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
     .filter(filterContext)
     .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));
 
+  const unreadCounts = Object.fromEntries(
+    servers.map((s) => [
+      s.id,
+      rooms
+        .filter((r) => r.server === s.id && r.room_type !== "direct" && r.id !== activeRoom?.id)
+        .reduce((acc, r) => acc + (r.unread_count ?? 0), 0),
+    ])
+  );
+  const homeUnread = rooms
+    .filter((r) => r.room_type === "direct" && r.id !== activeRoom?.id)
+    .reduce((acc, r) => acc + (r.unread_count ?? 0), 0);
+
   const openCreateServer = () => {
     setShowCreateServer((v) => !v);
     setShowCreateRoom(false);
@@ -298,6 +310,8 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
         activeId={activeId}
         onSelect={selectContext}
         onCreate={openCreateServer}
+        unreadCounts={unreadCounts}
+        homeUnread={homeUnread}
       />
 
       <div className="flex h-full min-w-0 flex-1 flex-col border-r border-[var(--border-color)] bg-[var(--bg-primary)]">

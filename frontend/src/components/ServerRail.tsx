@@ -15,11 +15,15 @@ export function ServerRail({
   activeId,
   onSelect,
   onCreate,
+  unreadCounts,
+  homeUnread = 0,
 }: {
   servers: Server[];
   activeId: "home" | number | null;
   onSelect: (key: RailKey) => void;
   onCreate: () => void;
+  unreadCounts?: Record<number, number>;
+  homeUnread?: number;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -41,7 +45,7 @@ export function ServerRail({
   );
 
   const icon = cn(
-    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold transition-colors"
+    "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold transition-colors"
   );
 
   return (
@@ -62,6 +66,11 @@ export function ServerRail({
       >
         <span className={icon}>
           <Home size={20} />
+          {homeUnread > 0 && activeId !== "home" && (
+            <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+              {homeUnread > 99 ? "99+" : homeUnread}
+            </span>
+          )}
         </span>
         {expanded && (
           <span className="truncate text-sm font-semibold">Главная</span>
@@ -72,6 +81,7 @@ export function ServerRail({
 
       {servers.map((s) => {
         const active = activeId === s.id;
+        const unread = unreadCounts?.[s.id] ?? 0;
         return (
           <button
             key={s.id}
@@ -95,6 +105,11 @@ export function ServerRail({
               )}
             >
               {getInitials(s.name)}
+              {unread > 0 && !active && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              )}
             </span>
             {expanded && (
               <span className="truncate text-sm font-medium">{s.name}</span>
