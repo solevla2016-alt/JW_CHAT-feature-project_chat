@@ -64,13 +64,19 @@ export function ServerRail({
             : "text-[var(--text-muted)] hover:bg-[var(--brand-light)] hover:text-[var(--brand-primary)]"
         )}
       >
-        <span className={icon}>
-          <Home size={20} />
-          {homeUnread > 0 && activeId !== "home" && (
-            <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-              {homeUnread > 99 ? "99+" : homeUnread}
-            </span>
-          )}
+        <span className={cn(icon, activeId === "home" && "bg-transparent text-white")}>
+          <span className="relative">
+            <Home size={20} />
+            {homeUnread > 0 && activeId !== "home" && (
+              expanded ? (
+                <span className="absolute -right-2.5 -top-2 flex h-5 min-w-5 animate-pulse items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-sm ring-1 ring-white/40">
+                  {homeUnread > 99 ? "99+" : homeUnread}
+                </span>
+              ) : (
+                <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-[var(--bg-tertiary)] bg-red-500" />
+              )
+            )}
+          </span>
         </span>
         {expanded && (
           <span className="truncate text-sm font-semibold">Главная</span>
@@ -104,12 +110,20 @@ export function ServerRail({
                 !active && !expanded && "group"
               )}
             >
-              {getInitials(s.name)}
-              {unread > 0 && !active && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                  {unread > 99 ? "99+" : unread}
-                </span>
-              )}
+              <span className="relative">
+                {getInitials(s.name)}
+                {unread > 0 && !active && (
+                  <>
+                    {expanded ? (
+                      <span className="absolute -right-2.5 -top-2 flex h-5 min-w-5 animate-pulse items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-sm ring-1 ring-white/40">
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    ) : (
+                      <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-[var(--bg-tertiary)] bg-red-500" />
+                    )}
+                  </>
+                )}
+              </span>
             </span>
             {expanded && (
               <span className="truncate text-sm font-medium">{s.name}</span>

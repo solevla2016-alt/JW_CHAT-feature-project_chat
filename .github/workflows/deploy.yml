@@ -58,10 +58,12 @@ jobs:
           script_stop: true
           script: |
             set -e
+            docker image prune -f >/dev/null 2>&1 || true
             cd /opt/jwchat
             docker load -i /tmp/jwchat-images.tar.gz
             docker compose -f docker-compose.vds.yml up -d
             docker compose -f docker-compose.vds.yml ps
+            rm -f /tmp/jwchat-images.tar.gz
 
       - name: Report result
         if: always()
