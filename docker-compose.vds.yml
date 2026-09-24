@@ -50,6 +50,8 @@ services:
       SESSION_COOKIE_SAMESITE: "Lax"
       CSRF_COOKIE_SECURE: "True"
       CSRF_COOKIE_SAMESITE: "Lax"
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-nvidia/nemotron-3-super-120b-a12b:free}
     ports:
       - "8000:8000"
     volumes:
