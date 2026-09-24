@@ -141,6 +141,11 @@ export function handleScreenStop(): void {
   handlers.onSessionEnd?.();
 }
 
+export function leaveScreenShare(): void {
+  closePeers();
+  handlers.onSessionEnd?.();
+}
+
 async function acceptScreenShare(broadcaster: string): Promise<void> {
   if (offered.has(broadcaster)) return;
   offered.add(broadcaster);

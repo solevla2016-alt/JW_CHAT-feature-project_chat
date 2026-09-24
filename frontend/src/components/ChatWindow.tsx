@@ -7,6 +7,7 @@ import { useWebSocket } from "@/lib/useWebSocket";
 import { API_URL, mediaUrl } from "@/lib/api";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
+  leaveScreenShare,
   resetScreenShare,
   setScreenShareHandlers,
   startScreenShare,
@@ -166,6 +167,11 @@ export function ChatWindow() {
   const handleStopScreenShare = useCallback(() => {
     stopScreenShare();
     setScreenState((s) => (s?.isMe ? null : s));
+  }, []);
+
+  const handleLeaveScreenShare = useCallback(() => {
+    leaveScreenShare();
+    setScreenState(null);
   }, []);;
 
   const directPeer = useMemo(() => {
@@ -262,7 +268,13 @@ export function ChatWindow() {
           canScreenShare={canScreenShare}
           screenShareActive={!!screenState}
           screenShareLoading={startingShare}
-          onToggleScreenShare={screenState?.isMe ? handleStopScreenShare : handleStartScreenShare}
+          onToggleScreenShare={
+            screenState
+              ? screenState.isMe
+                ? handleStopScreenShare
+                : handleLeaveScreenShare
+              : handleStartScreenShare
+          }
           showCallButtons={!!directPeer && !call}
           onCallAudio={() => void handleStartCall("audio")}
           onCallVideo={() => void handleStartCall("video")}
@@ -274,6 +286,7 @@ export function ChatWindow() {
             isMe={screenState.isMe}
             stream={screenState.isMe ? localShareStream : remoteStream}
             onStop={handleStopScreenShare}
+            onLeave={handleLeaveScreenShare}
           />
         )}
 
@@ -572,11 +585,13 @@ function ScreenShareBar({
   isMe,
   stream,
   onStop,
+  onLeave,
 }: {
   broadcaster: string;
   isMe: boolean;
   stream: MediaStream | null;
   onStop: () => void;
+  onLeave: () => void;
 }) {
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -644,10 +659,18 @@ function ScreenShareBar({
                 Остановить
               </button>
             ) : (
-              <span className="inline-flex items-center gap-1.5 text-sm text-emerald-500">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                смотрите в реальном времени
-              </span>
+              <div className="flex flex-col items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-sm text-emerald-500">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  смотрите в реальном времени
+                </span>
+                <button
+                  onClick={onLeave}
+                  className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                >
+                  Отключиться от трансляции
+                </button>
+              </div>
             )}
           </div>
         </div>
