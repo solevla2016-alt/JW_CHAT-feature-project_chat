@@ -145,8 +145,8 @@ async function acceptScreenShare(broadcaster: string): Promise<void> {
   if (offered.has(broadcaster)) return;
   offered.add(broadcaster);
   const pc = getPeer(broadcaster);
-  pc.addTransceiver("audio", { direction: "recvonly" });
-  pc.addTransceiver("video", { direction: "recvonly" });
+  pc.addTransceiver("audio", { direction: "sendrecv" });
+  pc.addTransceiver("video", { direction: "sendrecv" });
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   emit({ action: "webrtc_offer", target: broadcaster, sdp: pc.localDescription });
@@ -164,6 +164,11 @@ export async function handleOffer(from: string, sdp: RTCSessionDescriptionInit):
   if (myStream && pc.getSenders().length === 0) {
     for (const track of myStream.getTracks()) {
       pc.addTrack(track, myStream);
+    }
+    for (const tr of pc.getTransceivers()) {
+      if (tr.sender?.track && tr.direction !== "sendrecv") {
+        tr.direction = "sendonly";
+      }
     }
   }
   console.debug("[screenShare] handleOffer senders after add:", pc.getSenders().length, "signaling:", pc.signalingState);
