@@ -33,3 +33,8 @@ cookies.txt
 
 .coverage
 
+
+# stray local deploy files
+/deploy/nginx.conf
+/deploy/nginx-ssl.conf
+/entrypoint.backend.sh
