@@ -145,8 +145,8 @@ async function acceptScreenShare(broadcaster: string): Promise<void> {
   if (offered.has(broadcaster)) return;
   offered.add(broadcaster);
   const pc = getPeer(broadcaster);
-  pc.addTransceiver("audio", { direction: "sendrecv" });
-  pc.addTransceiver("video", { direction: "sendrecv" });
+  pc.addTransceiver("audio", { direction: "recvonly" });
+  pc.addTransceiver("video", { direction: "recvonly" });
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   emit({ action: "webrtc_offer", target: broadcaster, sdp: pc.localDescription });

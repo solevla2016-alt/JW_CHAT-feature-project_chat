@@ -52,6 +52,7 @@ export function ChatWindow() {
   const user = useChatStore((s) => s.user);
 
   const [screenState, setScreenState] = useState<{ broadcaster: string; isMe: boolean } | null>(null);
+  const [localShareStream, setLocalShareStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [startingShare, setStartingShare] = useState(false);
 
@@ -67,6 +68,10 @@ export function ChatWindow() {
       },
       onSessionEnd: () => {
         setScreenState(null);
+        setLocalShareStream((prev) => {
+          prev?.getTracks().forEach((t) => t.stop());
+          return null;
+        });
         setRemoteStream((prev) => {
           prev?.getTracks().forEach((t) => t.stop());
           return null;
@@ -105,6 +110,10 @@ export function ChatWindow() {
       const state = useChatStore.getState();
       resetScreenShare();
       setScreenState(null);
+      setLocalShareStream((prev) => {
+        prev?.getTracks().forEach((t) => t.stop());
+        return null;
+      });
       setRemoteStream((prev) => {
         prev?.getTracks().forEach((t) => t.stop());
         return null;
@@ -138,7 +147,7 @@ export function ChatWindow() {
       mic.getAudioTracks().forEach((t) => combined.addTrack(t));
 
       setScreenState({ broadcaster: user.username, isMe: true });
-      setRemoteStream(combined);
+      setLocalShareStream(combined);
       await startScreenShare(combined, user.username);
 
       const shutdown = () => {
@@ -263,7 +272,7 @@ export function ChatWindow() {
           <ScreenShareBar
             broadcaster={screenState.broadcaster}
             isMe={screenState.isMe}
-            stream={remoteStream}
+            stream={screenState.isMe ? localShareStream : remoteStream}
             onStop={handleStopScreenShare}
           />
         )}
