@@ -149,13 +149,10 @@ async function acceptScreenShare(broadcaster: string): Promise<void> {
   pc.addTransceiver("video", { direction: "recvonly" });
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  console.info("[screenShare] VIEWER offer sent mLines:", (pc.localDescription?.sdp ?? "").match(/m=(\w+) \d+/g)?.join(","), "dirs:", (pc.localDescription?.sdp ?? "").match(/a=(\w+only|inactive|sendrecv)/g)?.join(","));
   emit({ action: "webrtc_offer", target: broadcaster, sdp: pc.localDescription });
 }
 
 export async function handleOffer(from: string, sdp: RTCSessionDescriptionInit): Promise<void> {
-  console.debug("[screenShare] handleOffer from", from, "myStream:", Boolean(myStream), "myTracks:", myStream?.getTracks().length ?? 0);
-  console.info("[screenShare] OFFER received mLines:", (sdp.sdp ?? "").match(/m=(\w+) \d+/g)?.join(","), "dirs:", (sdp.sdp ?? "").match(/a=(\w+only|inactive|sendrecv)/g)?.join(","));
   let pc = getPeer(from);
   if (pc.remoteDescription || pc.signalingState !== "stable") {
     dropPeer(from);
@@ -173,24 +170,16 @@ export async function handleOffer(from: string, sdp: RTCSessionDescriptionInit):
       }
     }
   }
-  console.debug("[screenShare] handleOffer senders after add:", pc.getSenders().length, "trs:", pc.getTransceivers().map((t) => `${t.receiver.track.kind}:${t.direction}`).join(","));
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
-  const dirs = (answer.sdp ?? "").match(/a=(\w+only|inactive|sendrecv)/g) ?? [];
-  const mids = (answer.sdp ?? "").match(/m=(\w+) \d+/g) ?? [];
-  console.info("[screenShare] ANSWER built mLines:", mids.join(","), "dirs:", dirs.join(","));
   emit({ action: "webrtc_answer", target: from, sdp: pc.localDescription });
 }
 
 export async function handleAnswer(from: string, sdp: RTCSessionDescriptionInit): Promise<void> {
   const pc = peers.get(from);
   if (!pc) return;
-  const m = (sdp.sdp ?? "").match(/m=(\w+) \d+ UDP/g) ?? [];
-  const dirs = (sdp.sdp ?? "").match(/a=(\w+only|inactive|sendrecv)/g) ?? [];
-  console.info("[screenShare] VIEWER answer received mLines:", m.join(","), "dirs:", dirs.join(","));
   await pc.setRemoteDescription(sdp);
   await flushPending(from, pc);
-  console.debug("[screenShare] handleAnswer after setRD receivers:", pc.getReceivers().length, "tracks:", pc.getReceivers().map((r) => r.track.kind).join(","));
 }
 
 export async function handleCandidate(from: string, candidate: RTCIceCandidateInit): Promise<void> {
