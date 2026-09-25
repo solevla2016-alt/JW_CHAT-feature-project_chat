@@ -540,6 +540,14 @@ onClick={async () => {
         )}
 
         <button
+          onClick={openCreateServer}
+          className="mx-3 mb-1 flex items-center gap-2 rounded-lg border border-dashed border-emerald-500/50 px-3 py-2 text-sm text-emerald-500 transition-colors hover:border-emerald-500 hover:bg-emerald-500/10 md:hidden"
+        >
+          <Plus size={14} />
+          Создать сервер
+        </button>
+
+        <button
           onClick={openCreateRoom}
           className="mx-3 mb-1 flex items-center gap-2 rounded-lg border border-dashed border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
         >
