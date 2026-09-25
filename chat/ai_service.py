@@ -51,7 +51,7 @@ async def _gigachat_token() -> str | None:
         "RqUID": str(uuid.uuid4()),
     }
     try:
-        async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS, verify=settings.GIGACHAT_VERIFY_SSL) as client:
             resp = await client.post(
                 settings.GIGACHAT_AUTH_URL,
                 headers=headers,
@@ -93,7 +93,7 @@ async def ask_gigachat(prompt: str, history: list[dict[str, Any]]) -> str | None
     }
 
     try:
-        async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS, verify=settings.GIGACHAT_VERIFY_SSL) as client:
             for attempt in range(2):
                 resp = await client.post(url, json=payload, headers=headers)
                 if resp.status_code == 200:
