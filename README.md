@@ -71,8 +71,7 @@ WebSocket-общение, медиа, голосовые с транскрипц
 │   ├── permissions.py      # Роли, модерация, баны
 │   ├── serializers.py      # DRF сериализаторы
 │   ├── api_views.py        # REST эндпоинты (upload, search, transcribe, bans)
-│   ├── ai_service.py       # AI-ассистент (OpenRouter + fallback)
-│   ├── ai_local.py         # Локальный AI-бот (без ключа)
+│   ├── ai_service.py       # AI-ассистент (GigaChat)
 │   └── speech_service.py   # Транскрипция голосовых
 │
 └── frontend/               # Next.js 14 + TypeScript + Tailwind

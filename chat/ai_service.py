@@ -1,6 +1,4 @@
-"""AI-сервис: отправка запросов к GigaChat (Сбер) с
-fallback на локальную базу знаний при ошибке или отсутствии ключа.
-"""
+"""AI-сервис: отправка запросов к GigaChat (Сбер)."""
 
 import asyncio
 import base64
@@ -10,8 +8,6 @@ from typing import Any
 
 import httpx
 from django.conf import settings
-
-from . import ai_local
 
 AI_SYSTEM_PROMPT = (
     "Ты — ментор по языку Python в корпоративном чате 'JOIN WORK!'.\n"
@@ -123,24 +119,31 @@ def build_history(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+_AI_HELP_TEXT = "\n".join(
+    [
+        "Доступные команды:",
+        "",
+        "`/ai <вопрос>` — спросить меня как ментора по Python",
+        "`/help` — этот список",
+        "",
+        "Моя специализация — Python (синтаксис, идиомы, асинхронность, ООП, "
+        "тесты, оптимизация). Также разбираюсь в веб-фреймворках Django, DRF, "
+        "FastAPI, Flask и в SQL, Git, Docker, алгоритмах и паттернах.",
+    ]
+)
+
+
 async def get_ai_answer(prompt: str, history: list[dict[str, Any]]) -> str:
-    """Возвращает ответ: сначала GigaChat, при сбое — локальный бот."""
+    """Возвращает ответ GigaChat."""
     normalized = prompt.strip().lower()
     if normalized.startswith("/help"):
-        return ai_local.ai_help_text()
+        return _AI_HELP_TEXT
 
     online = await ask_gigachat(prompt, history)
     if online:
         return online
 
-    local = ai_local.local_ai_answer(prompt, history)
-    if local:
-        return local
-
     return (
-        "Я — твой ментор по Python, но пока не распознал вопрос "
-        "(и внешний сервис ИИ сейчас недоступен).\n"
-        "Уточни, например: 'как работают декораторы в Python?', "
-        "'что такое yield?', 'как написать тест в pytest?'. "
-        "Напиши `/help` для списка команд."
+        "Я — твой ментор по Python, но внешний сервис ИИ сейчас недоступен.\n"
+        "Попробуй ещё раз через минуту или напиши `/help` для списка команд."
     )

@@ -278,30 +278,13 @@ class TestAiService:
         result = await get_ai_answer("/help", [])
         assert "Python" in result
 
-    async def test_local_fallback(self, settings):
+    async def test_no_credentials_returns_unavailable(self, settings):
         settings.GIGACHAT_CLIENT_ID = ""
         settings.GIGACHAT_CLIENT_SECRET = ""
         settings.GIGACHAT_USERNAME = ""
         settings.GIGACHAT_PASSWORD = ""
         result = await get_ai_answer("что такое yield", [])
-        assert "Генератор" in result
-
-    async def test_unknown_query_fallback(self, settings):
-        settings.GIGACHAT_CLIENT_ID = ""
-        settings.GIGACHAT_CLIENT_SECRET = ""
-        settings.GIGACHAT_USERNAME = ""
-        settings.GIGACHAT_PASSWORD = ""
-        result = await get_ai_answer("абракадабра", [])
-        assert "ментор" in result
-
-    async def test_local_matching_prefers_specific_topic(self, settings):
-        settings.GIGACHAT_CLIENT_ID = ""
-        settings.GIGACHAT_CLIENT_SECRET = ""
-        settings.GIGACHAT_USERNAME = ""
-        settings.GIGACHAT_PASSWORD = ""
-        result = await get_ai_answer("как сделать сортировку в python?", [])
-        assert "сортировк" in result.lower()
-        assert "декоратор" not in result.lower()
+        assert "недоступен" in result
 
     async def test_ask_gigachat_no_credentials(self, settings):
         settings.GIGACHAT_CLIENT_ID = ""
