@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Moon, Sun } from "lucide-react";
+import { Eye, EyeOff, Loader2, Moon, Sun } from "lucide-react";
 import { motion } from "framer-motion";
 import { apiFetch } from "@/lib/api";
 import { useChatStore } from "@/lib/store";
@@ -18,6 +18,7 @@ export default function RegisterPage() {
   const [birthDate, setBirthDate] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -117,22 +118,42 @@ export default function RegisterPage() {
             />
             <span className="whitespace-nowrap text-xs text-[var(--text-muted)]">дата рождения</span>
           </div>
-          <input
-            type="password"
-            placeholder="Пароль"
-            className="input-base"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <input
-            type="password"
-            placeholder="Повторите пароль"
-            className="input-base"
-            value={password2}
-            onChange={(e) => setPassword2(e.target.value)}
-            required
-          />
+          <div className="relative">
+            <input
+              type={showPass ? "text" : "password"}
+              placeholder="Пароль"
+              className="input-base w-full pr-10"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass((v) => !v)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+              aria-label={showPass ? "Скрыть пароль" : "Показать пароль"}
+            >
+              {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+          <div className="relative">
+            <input
+              type={showPass ? "text" : "password"}
+              placeholder="Повторите пароль"
+              className="input-base w-full pr-10"
+              value={password2}
+              onChange={(e) => setPassword2(e.target.value)}
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass((v) => !v)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+              aria-label={showPass ? "Скрыть пароль" : "Показать пароль"}
+            >
+              {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
 
           {error && (
             <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">

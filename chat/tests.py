@@ -874,3 +874,49 @@ class TestServerApi:
         resp = api_client.post(f"/api/chat/servers/join/{server.invite_token}/")
         assert resp.status_code == 200
         assert stranger in server.members.all()
+
+
+@pytest.mark.django_db()
+class TestEnsureAiChatCommand:
+    def test_creates_ai_user_and_direct_room(self, owner, stranger):
+        from django.conf import settings
+        from django.core.management import call_command
+
+        call_command("ensure_ai_chat", verbosity=0)
+
+        ai = User.objects.get(username=settings.AI_ASSISTANT_USERNAME)
+        room = ChatRoom.objects.get(name=settings.AI_ASSISTANT_USERNAME)
+        assert room.room_type == ChatRoom.RoomType.DIRECT
+        assert ai in room.members.all()
+        assert owner in room.members.all()
+        assert stranger in room.members.all()
+
+    def test_is_idempotent(self, owner):
+        from django.conf import settings
+        from django.core.management import call_command
+
+        call_command("ensure_ai_chat", verbosity=0)
+        call_command("ensure_ai_chat", verbosity=0)
+
+        rooms = ChatRoom.objects.filter(name=settings.AI_ASSISTANT_USERNAME)
+        assert rooms.count() == 1
+
+    def test_serializer_marks_ai_room_and_member(self, rf, owner):
+        from django.conf import settings
+        from django.core.management import call_command
+
+        call_command("ensure_ai_chat", verbosity=0)
+        room = ChatRoom.objects.get(name=settings.AI_ASSISTANT_USERNAME)
+
+        request = rf.get("/api/chat/rooms/")
+        request.user = owner
+        data = ChatRoomSerializer(room, context={"request": request}).data
+
+        assert data["is_ai"] is True
+        assert any(m["is_ai"] for m in data["members"])
+
+    def test_serializer_marks_regular_room_as_not_ai(self, rf, group_room, owner):
+        request = rf.get("/api/chat/rooms/")
+        request.user = owner
+        data = ChatRoomSerializer(group_room, context={"request": request}).data
+        assert data["is_ai"] is False

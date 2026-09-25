@@ -1,7 +1,9 @@
+﻿from datetime import timedelta
 from io import BytesIO
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -115,12 +117,12 @@ class TestProfileApi:
         api_client.force_authenticate(user=user)
         resp = api_client.post(
             PROFILE_URL,
-            {"status": "в работе", "message_privacy": "contacts"},
+            {"status": "РІ СЂР°Р±РѕС‚Рµ", "message_privacy": "contacts"},
             format="json",
         )
         assert resp.status_code == 200
         user.refresh_from_db()
-        assert user.status == "в работе"
+        assert user.status == "РІ СЂР°Р±РѕС‚Рµ"
         assert user.message_privacy == "contacts"
 
     def test_update_invalid_birth_date(self, api_client, user):
@@ -215,3 +217,149 @@ class TestSetRoleApi:
             format="json",
         )
         assert resp.status_code == 404
+
+
+PASSWORD_RESET_REQUEST_URL = "/api/auth/password-reset/request/"
+PASSWORD_RESET_CONFIRM_URL = "/api/auth/password-reset/confirm/"
+
+
+@pytest.mark.django_db()
+class TestPasswordReset:
+    def test_request_creates_token_and_sends_email(self, api_client, user, monkeypatch):
+        user.email = "reset@example.com"
+        user.save(update_fields=["email"])
+
+        sent = {}
+
+        def _fake_post(url, headers=None, json=None, timeout=None):
+            sent["url"] = url
+            sent["json"] = json
+            return None
+
+        monkeypatch.setattr("users.api_views.httpx.post", _fake_post)
+        monkeypatch.setattr(
+            "users.api_views.settings.RESEND_API_KEY",
+            "test-key",
+            raising=False,
+        )
+
+        resp = api_client.post(
+            PASSWORD_RESET_REQUEST_URL,
+            {"email": "reset@example.com"},
+            format="json",
+        )
+        assert resp.status_code == 200
+        assert sent["url"] == "https://api.resend.com/emails"
+        assert sent["json"]["to"] == ["reset@example.com"]
+        assert sent["json"]["from"].startswith("JW CHAT <")
+
+    def test_request_unknown_email_returns_404(self, api_client):
+        resp = api_client.post(
+            PASSWORD_RESET_REQUEST_URL,
+            {"email": "nobody@example.com"},
+            format="json",
+        )
+        assert resp.status_code == 404
+
+    def test_request_missing_email_returns_400(self, api_client):
+        resp = api_client.post(PASSWORD_RESET_REQUEST_URL, {}, format="json")
+        assert resp.status_code == 400
+
+    def test_confirm_sets_new_password(self, api_client, user, monkeypatch):
+        from django.utils.http import urlsafe_base64_encode
+
+        from .models import PasswordResetToken
+
+        user.email = "reset@example.com"
+        user.save(update_fields=["email"])
+
+        raw = "testtoken123"
+        PasswordResetToken.objects.create(
+            user=user,
+            token=raw,
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+        uid = urlsafe_base64_encode(str(user.pk).encode())
+
+        resp = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "uid": uid,
+                "token": raw,
+                "password": "newpass123",
+                "password2": "newpass123",
+            },
+            format="json",
+        )
+        assert resp.status_code == 200
+        user.refresh_from_db()
+        assert user.check_password("newpass123")
+        assert PasswordResetToken.objects.filter(token=raw, used=True).exists()
+
+    def test_confirm_expired_token_fails(self, api_client, user):
+        from django.utils.http import urlsafe_base64_encode
+
+        from .models import PasswordResetToken
+
+        raw = "expiredtoken"
+        PasswordResetToken.objects.create(
+            user=user,
+            token=raw,
+            expires_at=timezone.now() - timedelta(minutes=1),
+        )
+        uid = urlsafe_base64_encode(str(user.pk).encode())
+
+        resp = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "uid": uid,
+                "token": raw,
+                "password": "newpass123",
+                "password2": "newpass123",
+            },
+            format="json",
+        )
+        assert resp.status_code == 400
+        user.refresh_from_db()
+        assert not user.check_password("newpass123")
+
+    def test_confirm_invalid_token_fails(self, api_client, user):
+        from django.utils.http import urlsafe_base64_encode
+
+        uid = urlsafe_base64_encode(str(user.pk).encode())
+        resp = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "uid": uid,
+                "token": "nonexistent",
+                "password": "newpass123",
+                "password2": "newpass123",
+            },
+            format="json",
+        )
+        assert resp.status_code == 400
+
+    def test_confirm_mismatched_passwords_fails(self, api_client, user):
+        from django.utils.http import urlsafe_base64_encode
+
+        from .models import PasswordResetToken
+
+        raw = "mismatchtoken"
+        PasswordResetToken.objects.create(
+            user=user,
+            token=raw,
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+        uid = urlsafe_base64_encode(str(user.pk).encode())
+
+        resp = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "uid": uid,
+                "token": raw,
+                "password": "newpass123",
+                "password2": "different123",
+            },
+            format="json",
+        )
+        assert resp.status_code == 400

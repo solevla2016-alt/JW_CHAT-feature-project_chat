@@ -206,7 +206,7 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
 
       <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-3">
         {sorted.map((m) => {
-          const isOnline = onlineUsers.some((u) => u.username === m.username);
+          const isOnline = onlineUsers.some((u) => u.username === m.username) || m.is_ai;
           const isOwner = m.username === activeRoom.owner;
           const isSelf = m.username === user?.username;
           return (

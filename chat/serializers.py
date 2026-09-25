@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from .models import ChatRoom, Message, ReadStatus, Server
@@ -55,14 +56,22 @@ class ChatRoomSerializer(serializers.ModelSerializer):
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
     members = serializers.SerializerMethodField()
+    is_ai = serializers.SerializerMethodField()
     server = serializers.PrimaryKeyRelatedField(read_only=True)
     server_name = serializers.CharField(source="server.name", read_only=True, default="")
 
     class Meta:
         model = ChatRoom
-        fields = ("id", "name", "description", "avatar", "is_private", "room_type", "owner", "member_count", "members", "last_message", "unread_count", "server", "server_name", "created_at")
+        fields = ("id", "name", "description", "avatar", "is_private", "room_type", "owner", "member_count", "members", "last_message", "unread_count", "server", "server_name", "is_ai", "created_at")
+
+    def get_is_ai(self, obj: ChatRoom) -> bool:
+        return (
+            obj.room_type == ChatRoom.RoomType.DIRECT
+            and obj.name == settings.AI_ASSISTANT_USERNAME
+        )
 
     def get_members(self, obj: ChatRoom) -> list[dict]:
+        ai_username = settings.AI_ASSISTANT_USERNAME
         users = obj.members.select_related().order_by("username")
         result = [
             {
@@ -70,6 +79,7 @@ class ChatRoomSerializer(serializers.ModelSerializer):
                 "username": u.username,
                 "avatar": u.avatar.url if u.avatar else None,
                 "role": u.role,
+                "is_ai": u.username == ai_username,
             }
             for u in users
         ]
@@ -79,6 +89,7 @@ class ChatRoomSerializer(serializers.ModelSerializer):
                 "username": obj.owner.username,
                 "avatar": obj.owner.avatar.url if obj.owner.avatar else None,
                 "role": obj.owner.role,
+                "is_ai": obj.owner.username == ai_username,
             })
         return result
 

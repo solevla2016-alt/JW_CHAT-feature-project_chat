@@ -49,3 +49,23 @@ class User(AbstractUser):
 
     def __str__(self) -> str:
         return self.username
+
+
+class PasswordResetToken(models.Model):
+    """Одноразовый токен восстановления пароля (ссылка из письма Resend)."""
+
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="password_reset_tokens",
+    )
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Reset token {self.user_id} ({self.token[:8]}…)"

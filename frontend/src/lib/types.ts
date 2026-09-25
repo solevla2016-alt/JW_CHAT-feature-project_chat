@@ -8,6 +8,7 @@ export interface User {
   message_privacy?: "everyone" | "contacts" | "nobody";
   role?: "member" | "moderator" | "admin";
   is_staff?: boolean;
+  is_ai?: boolean;
 }
 
 export interface ReplyTo {
@@ -44,6 +45,7 @@ export interface ChatRoomMember {
   username: string;
   avatar: string | null;
   role?: "member" | "moderator" | "admin";
+  is_ai?: boolean;
 }
 
 export interface RoomBan {
@@ -79,6 +81,7 @@ export interface ChatRoom {
   unread_count?: number;
   server: number | null;
   server_name?: string;
+  is_ai?: boolean;
   last_message: {
     text: string;
     username: string;

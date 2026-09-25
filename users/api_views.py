@@ -1,5 +1,12 @@
+import logging
+from datetime import timedelta
+
+import httpx
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.utils import timezone
+from django.utils.crypto import get_random_string
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import permissions, status
 from rest_framework.authentication import SessionAuthentication
@@ -11,7 +18,10 @@ from rest_framework.decorators import (
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from .models import PasswordResetToken
+
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class CsrfExemptSessionAuthentication(SessionAuthentication):
@@ -227,3 +237,125 @@ def set_role_view(request: Request) -> Response:
     user.role = role
     user.save(update_fields=["role"])
     return Response(_user_data(user))
+
+
+# ----------------------------------------------------------------------
+# Восстановление пароля через Resend (п.3)
+# ----------------------------------------------------------------------
+
+def _send_reset_email(to_email: str, reset_url: str, username: str) -> None:
+    """Транзакционное письмо с итоговой ссылкой сброса пароля через Resend API."""
+    if not settings.RESEND_API_KEY:
+        return
+
+    html = f"""<!doctype html>
+<html lang="ru">
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px;">
+    <tr><td align="center">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:16px;padding:32px;">
+        <tr><td style="font-size:13px;color:#6b7280;padding-bottom:4px;">JOIN WORK!</td></tr>
+        <tr><td style="padding-top:4px;padding-bottom:16px;font-size:22px;font-weight:700;color:#111827;">Восстановление пароля</td></tr>
+        <tr><td style="font-size:14px;line-height:20px;color:#374151;padding-bottom:20px;">Здравствуйте, <b>{username}</b>! Для сброса пароля нажмите кнопку ниже (ссылка действует 1 час):</td></tr>
+        <tr><td style="padding-bottom:24px;">
+          <a href="{reset_url}" style="display:inline-block;background:#4f46e5;color:#ffffff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none;">Сбросить пароль</a>
+        </td></tr>
+        <tr><td style="font-size:12px;color:#9ca3af;">Если вы не запрашивали сброс — просто проигнорируйте это письмо.</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+    try:
+        httpx.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": f"{settings.RESEND_FROM_NAME} <{settings.RESEND_FROM_EMAIL}>",
+                "to": [to_email],
+                "subject": "JOIN WORK: восстановление пароля",
+                "html": html,
+            },
+            timeout=15,
+        )
+    except Exception:
+        logger.exception("Не удалось отправить письмо восстановления на %s", to_email)
+
+
+@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([permissions.AllowAny])
+def password_reset_request_view(request: Request) -> Response:
+    """Принимает email, создаёт одноразовый токен и шлёт письмо через Resend."""
+    email = request.data.get("email", "").strip()
+    if not email:
+        return Response({"error": "Укажите email"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response({"error": "Пользователь с таким email не найден"}, status=status.HTTP_404_NOT_FOUND)
+
+    PasswordResetToken.objects.filter(user=user, used=False).update(used=True)
+
+    raw_token = get_random_string(48)
+    token = PasswordResetToken.objects.create(
+        user=user,
+        token=raw_token,
+        expires_at=timezone.now() + timedelta(hours=1),
+    )
+
+    reset_url = (
+        f"{settings.FRONTEND_URL}/reset-password?uid={urlsafe_base64_encode(str(user.pk).encode())}"
+        f"&token={raw_token}"
+    )
+    _send_reset_email(user.email, reset_url, user.username)
+
+    return Response({"ok": True, "token_id": token.pk})
+
+
+@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([permissions.AllowAny])
+def password_reset_confirm_view(request: Request) -> Response:
+    """Проверяет токен и устанавливает новый пароль."""
+    uid = request.data.get("uid", "")
+    token = request.data.get("token", "").strip()
+    password = request.data.get("password", "")
+    password2 = request.data.get("password2", "")
+
+    if not password or password != password2:
+        return Response({"error": "Пароли не совпадают"}, status=status.HTTP_400_BAD_REQUEST)
+    if len(password) < 6:
+        return Response({"error": "Пароль минимум 6 символов"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user_pk = int(urlsafe_base64_decode(uid).decode())
+    except Exception:
+        return Response({"error": "Ссылка некорректна"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        reset_token = PasswordResetToken.objects.get(
+            user_id=user_pk,
+            token=token,
+            used=False,
+        )
+    except PasswordResetToken.DoesNotExist:
+        return Response({"error": "Ссылка недействительна"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if reset_token.expires_at < timezone.now():
+        return Response({"error": "Ссылка истекла"}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = reset_token.user
+    user.set_password(password)
+    user.save(update_fields=["password"])
+    reset_token.used = True
+    reset_token.save(update_fields=["used"])
+
+    return Response({"ok": True, "username": user.username})

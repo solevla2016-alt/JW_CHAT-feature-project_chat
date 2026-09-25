@@ -152,7 +152,11 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
 
   const filteredRooms = rooms
     .filter(filterContext)
-    .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));
+    .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (Boolean(a.is_ai) !== Boolean(b.is_ai)) return a.is_ai ? -1 : 1;
+      return 0;
+    });
 
   const unreadCounts = Object.fromEntries(
     servers.map((s) => [
