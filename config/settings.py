@@ -162,11 +162,16 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 2_500_000
 DATA_UPLOAD_MAX_MEMORY_SIZE = 15_000_000
 FILE_UPLOAD_MAX_SIZE = int(os.getenv("FILE_UPLOAD_MAX_SIZE", str(100 * 1024 * 1024)))
 
-# --- AI Assistant (OpenRouter — бесплатный) ---
+# --- AI Assistant (GigaChat — бесплатный для разработчиков) ---
 AI_ASSISTANT_USERNAME = os.getenv("AI_ASSISTANT_USERNAME", "AI Assistant")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
-OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+GIGACHAT_CLIENT_ID = os.getenv("GIGACHAT_CLIENT_ID", "")
+GIGACHAT_CLIENT_SECRET = os.getenv("GIGACHAT_CLIENT_SECRET", "")
+GIGACHAT_USERNAME = os.getenv("GIGACHAT_USERNAME", "")
+GIGACHAT_PASSWORD = os.getenv("GIGACHAT_PASSWORD", "")
+GIGACHAT_MODEL = os.getenv("GIGACHAT_MODEL", "GigaChat-Pro:latest")
+GIGACHAT_SCOPE = os.getenv("GIGACHAT_SCOPE", "GIGACHAT_API_PERS")
+GIGACHAT_AUTH_URL = os.getenv("GIGACHAT_AUTH_URL", "https://ngw.devices.sberbank.ru:9443/api/v2/oauth")
+GIGACHAT_BASE_URL = os.getenv("GIGACHAT_BASE_URL", "https://gigachat.devices.sberbank.ru/api/v1")
 AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "30"))
 AI_CONTEXT_MESSAGES = int(os.getenv("AI_CONTEXT_MESSAGES", "20"))
 

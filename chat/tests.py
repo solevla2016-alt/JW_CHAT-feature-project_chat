@@ -13,7 +13,7 @@ from django.utils import timezone
 from rest_framework import status
 
 from chat import permissions
-from chat.ai_service import ask_openrouter, build_history, get_ai_answer
+from chat.ai_service import ask_gigachat, build_history, get_ai_answer
 from chat.consumers import ChatConsumer
 from chat.models import ChatRoom, Message, Reaction, RoomBan, Server
 from chat.serializers import ChatRoomSerializer, MessageSerializer
@@ -279,75 +279,102 @@ class TestAiService:
         assert "Python" in result
 
     async def test_local_fallback(self, settings):
-        settings.OPENROUTER_API_KEY = ""
+        settings.GIGACHAT_CLIENT_ID = ""
+        settings.GIGACHAT_CLIENT_SECRET = ""
+        settings.GIGACHAT_USERNAME = ""
+        settings.GIGACHAT_PASSWORD = ""
         result = await get_ai_answer("что такое yield", [])
         assert "Генератор" in result
 
     async def test_unknown_query_fallback(self, settings):
-        settings.OPENROUTER_API_KEY = ""
+        settings.GIGACHAT_CLIENT_ID = ""
+        settings.GIGACHAT_CLIENT_SECRET = ""
+        settings.GIGACHAT_USERNAME = ""
+        settings.GIGACHAT_PASSWORD = ""
         result = await get_ai_answer("абракадабра", [])
         assert "ментор" in result
 
     async def test_local_matching_prefers_specific_topic(self, settings):
-        settings.OPENROUTER_API_KEY = ""
+        settings.GIGACHAT_CLIENT_ID = ""
+        settings.GIGACHAT_CLIENT_SECRET = ""
+        settings.GIGACHAT_USERNAME = ""
+        settings.GIGACHAT_PASSWORD = ""
         result = await get_ai_answer("как сделать сортировку в python?", [])
         assert "сортировк" in result.lower()
         assert "декоратор" not in result.lower()
 
-    async def test_ask_openrouter_no_key(self, settings):
-        settings.OPENROUTER_API_KEY = ""
-        result = await ask_openrouter("test", [])
+    async def test_ask_gigachat_no_credentials(self, settings):
+        settings.GIGACHAT_CLIENT_ID = ""
+        settings.GIGACHAT_CLIENT_SECRET = ""
+        settings.GIGACHAT_USERNAME = ""
+        settings.GIGACHAT_PASSWORD = ""
+        result = await ask_gigachat("test", [])
         assert result is None
 
-    async def test_ask_openrouter_success(self, settings):
-        settings.OPENROUTER_API_KEY = "test-key"
+    async def test_ask_gigachat_success(self, settings):
+        settings.GIGACHAT_CLIENT_ID = "id"
+        settings.GIGACHAT_CLIENT_SECRET = "client-secret-value"
 
-        fake_resp = MagicMock()
-        fake_resp.status_code = 200
-        fake_resp.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
+        fake_token_resp = MagicMock()
+        fake_token_resp.status_code = 200
+        fake_token_resp.json.return_value = {"access_token": "tok"}
+
+        fake_chat_resp = MagicMock()
+        fake_chat_resp.status_code = 200
+        fake_chat_resp.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
 
         with patch("chat.ai_service.httpx.AsyncClient") as mock_client:
             ctx = AsyncMock()
-            ctx.post.return_value = fake_resp
+            ctx.post.side_effect = [fake_token_resp, fake_chat_resp]
             ctx.__aenter__ = AsyncMock(return_value=ctx)
             ctx.__aexit__ = AsyncMock(return_value=False)
             mock_client.return_value = ctx
-            result = await ask_openrouter("test", [])
+            result = await ask_gigachat("test", [])
         assert result == "ok"
 
-    async def test_ask_openrouter_no_choices(self, settings):
-        settings.OPENROUTER_API_KEY = "test-key"
+    async def test_ask_gigachat_no_choices(self, settings):
+        settings.GIGACHAT_CLIENT_ID = "id"
+        settings.GIGACHAT_CLIENT_SECRET = "client-secret-value"
 
-        fake_resp = MagicMock()
-        fake_resp.status_code = 200
-        fake_resp.json.return_value = {"error": {"message": "overloaded"}}
-        fake_resp.text = "overloaded"
+        fake_token_resp = MagicMock()
+        fake_token_resp.status_code = 200
+        fake_token_resp.json.return_value = {"access_token": "tok"}
+
+        fake_chat_resp = MagicMock()
+        fake_chat_resp.status_code = 200
+        fake_chat_resp.json.return_value = {"error": {"message": "overloaded"}}
+        fake_chat_resp.text = "overloaded"
 
         with patch("chat.ai_service.httpx.AsyncClient") as mock_client, \
              patch("chat.ai_service.asyncio.sleep", new_callable=AsyncMock):
             ctx = AsyncMock()
-            ctx.post.return_value = fake_resp
+            ctx.post.side_effect = [fake_token_resp, fake_chat_resp, fake_chat_resp]
             ctx.__aenter__ = AsyncMock(return_value=ctx)
             ctx.__aexit__ = AsyncMock(return_value=False)
             mock_client.return_value = ctx
-            result = await ask_openrouter("test", [])
+            result = await ask_gigachat("test", [])
         assert result is None
 
-    async def test_ask_openrouter_http_error(self, settings):
-        settings.OPENROUTER_API_KEY = "test-key"
+    async def test_ask_gigachat_http_error(self, settings):
+        settings.GIGACHAT_CLIENT_ID = "id"
+        settings.GIGACHAT_CLIENT_SECRET = "client-secret-value"
 
-        fake_resp = MagicMock()
-        fake_resp.status_code = 429
-        fake_resp.text = "rate limited"
+        fake_token_resp = MagicMock()
+        fake_token_resp.status_code = 200
+        fake_token_resp.json.return_value = {"access_token": "tok"}
+
+        fake_chat_resp = MagicMock()
+        fake_chat_resp.status_code = 429
+        fake_chat_resp.text = "rate limited"
 
         with patch("chat.ai_service.httpx.AsyncClient") as mock_client, \
              patch("chat.ai_service.asyncio.sleep", new_callable=AsyncMock):
             ctx = AsyncMock()
-            ctx.post.return_value = fake_resp
+            ctx.post.side_effect = [fake_token_resp, fake_chat_resp, fake_chat_resp]
             ctx.__aenter__ = AsyncMock(return_value=ctx)
             ctx.__aexit__ = AsyncMock(return_value=False)
             mock_client.return_value = ctx
-            result = await ask_openrouter("test", [])
+            result = await ask_gigachat("test", [])
         assert result is None
 
 

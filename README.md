@@ -137,9 +137,11 @@ npm run dev
 
 ### 4. AI-ассистент
 
-Без ключа работает локальный бот. Для облачного OpenRouter задайте в `.env`:
+Без ключа работает локальный бот. Для облачного GigaChat задайте в `.env`
+ключи из кабинета разработчиков Сбера (developers.sber.ru):
 ```bash
-OPENROUTER_API_KEY=sk-or-v1-...
+GIGACHAT_CLIENT_ID=...
+GIGACHAT_CLIENT_SECRET=...
 ```
 
 ## 🤖 Как использовать AI
