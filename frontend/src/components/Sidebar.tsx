@@ -105,7 +105,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
     try {
       const res = await fetch(`${API_URL}/auth/users/`, { credentials: "include" });
       if (res.ok) {
-        const data: Array<{ id: number; username: string; avatar: string | null; status: string }> = await res.json();
+        const data: Array<{ id: number; username: string; avatar: string | null; status: string; is_ai?: boolean }> = await res.json();
         setUsers(data);
       }
     } catch {
@@ -571,7 +571,7 @@ onClick={async () => {
                     <span
                       className={cn(
                         "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[var(--bg-primary)]",
-                        onlineUsers.some((x) => x.username === u.username) ? "bg-emerald-500" : "bg-gray-400"
+                        onlineUsers.some((x) => x.username === u.username) || u.is_ai ? "bg-emerald-500" : "bg-gray-400"
                       )}
                     />
                   </div>
