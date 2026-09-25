@@ -95,6 +95,15 @@ class TestAuthApi:
         resp = api_client.get(ME_URL)
         assert resp.status_code == 403
 
+    def test_users_list_includes_ai_assistant(self, api_client, user):
+        api_client.force_authenticate(user=user)
+        resp = api_client.get("/api/auth/users/")
+        assert resp.status_code == 200
+        assert len(resp.data) >= 1
+        assert resp.data[0]["username"] == "AI Assistant"
+        assert resp.data[0]["is_ai"] is True
+        assert all(u["username"] != "AI Assistant" for u in resp.data[1:])
+
     def test_logout(self, api_client, user):
         api_client.force_authenticate(user=user)
         assert api_client.post(LOGOUT_URL).status_code == 200

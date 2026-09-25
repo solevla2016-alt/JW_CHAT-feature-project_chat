@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import permissions, status
@@ -91,21 +92,33 @@ def me_view(request: Request) -> Response:
 
 @api_view(["GET"])
 def users_list_view(request: Request) -> Response:
+    ai_username = settings.AI_ASSISTANT_USERNAME
+    ai_user, _ = User.objects.get_or_create(
+        username=ai_username,
+        defaults={"email": "ai@joinwork.local", "status": "AI"},
+    )
+    ai_data = {
+        "id": ai_user.id,
+        "username": ai_user.username,
+        "avatar": ai_user.avatar.url if ai_user.avatar else None,
+        "status": ai_user.status,
+        "is_ai": True,
+    }
     users = (
-        User.objects.exclude(id=request.user.id)
+        User.objects
+        .exclude(id__in=[request.user.id, ai_user.id])
         .only("id", "username", "avatar", "status")[:100]
     )
-    return Response(
-        [
-            {
-                "id": u.id,
-                "username": u.username,
-                "avatar": u.avatar.url if u.avatar else None,
-                "status": u.status,
-            }
-            for u in users
-        ]
-    )
+    result = [
+        {
+            "id": u.id,
+            "username": u.username,
+            "avatar": u.avatar.url if u.avatar else None,
+            "status": u.status,
+        }
+        for u in users
+    ]
+    return Response([ai_data, *result])
 
 
 @csrf_exempt
