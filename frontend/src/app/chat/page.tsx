@@ -67,7 +67,7 @@ export default function ChatPage() {
   if (!user) return null;
 
   return (
-    <div className="flex h-full w-full overflow-hidden">
+    <div className="flex h-dvh w-full overflow-hidden">
       <motion.div
         initial={false}
         animate={{

@@ -176,7 +176,7 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="flex h-full w-64 flex-col border-l border-[var(--border-color)] bg-[var(--bg-primary)]">
+      <div className="safe-t safe-b flex h-full w-64 flex-col border-l border-[var(--border-color)] bg-[var(--bg-primary)]">
       <div className="flex items-center justify-between px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold">Участники</h3>

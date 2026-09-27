@@ -470,7 +470,7 @@ export function ChatHeader({
         ? "Канал"
         : "Группа";
   return (
-    <div className="flex items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)]/80 px-4 py-3 backdrop-blur-md md:px-6">
+      <div className="safe-t flex items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)]/80 px-4 py-3 backdrop-blur-md md:px-6">
       <div className="flex items-center gap-3">
         <button
           onClick={onOpenSidebar}

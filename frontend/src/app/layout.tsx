@@ -1,13 +1,28 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { DevRedirect } from "@/components/DevRedirect";
 
 export const metadata: Metadata = {
   title: "JOIN WORK! — Мессенджер",
   description: "Современный реально-временный чат для команды JOIN WORK!",
-  icons: {
-    icon: "/logo.png",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "JOIN WORK!",
   },
+  formatDetection: { telephone: false },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+  ],
 };
 
 export default function RootLayout({
@@ -17,7 +32,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" suppressHydrationWarning>
-      <body className="chat-app h-screen overflow-hidden">
+      <body className="chat-app min-h-dvh bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased">
         <DevRedirect />
         {children}
       </body>

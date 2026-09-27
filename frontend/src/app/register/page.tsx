@@ -64,7 +64,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-dvh items-center justify-center overflow-x-hidden overflow-y-auto px-4 py-6">
       <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-brand-50 via-transparent to-brand-100/50 dark:from-brand-950 dark:to-transparent" />
 
       <button
@@ -130,7 +130,7 @@ export default function RegisterPage() {
             <button
               type="button"
               onClick={() => setShowPass((v) => !v)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+              className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
               aria-label={showPass ? "Скрыть пароль" : "Показать пароль"}
             >
               {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -148,7 +148,7 @@ export default function RegisterPage() {
             <button
               type="button"
               onClick={() => setShowPass((v) => !v)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+              className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
               aria-label={showPass ? "Скрыть пароль" : "Показать пароль"}
             >
               {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
