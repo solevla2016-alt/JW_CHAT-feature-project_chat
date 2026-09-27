@@ -79,7 +79,7 @@ export default function ChatPage() {
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </motion.div>
 
-      <aside className="hidden h-full w-80 shrink-0 md:block">
+      <aside className="hidden h-full w-72 shrink-0 md:block lg:w-80">
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </aside>
 

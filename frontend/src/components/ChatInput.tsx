@@ -246,7 +246,7 @@ export function ChatInput({
   const canSend = (value.trim() || pending) && !tooLong;
 
   return (
-    <div className="safe-b relative border-t border-[var(--border-color)] px-4 py-3 md:px-6">
+    <div className="safe-b safe-x relative border-t border-[var(--border-color)] px-4 py-3 md:px-6">
       {(replyTarget || editingTarget) && (
         <div className="mb-2 flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-sm">
           {replyTarget ? (

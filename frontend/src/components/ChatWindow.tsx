@@ -413,12 +413,12 @@ export function ChatWindow() {
         </div>
 
         {membersOpen && (
-          <div className="hidden md:block">
+          <div className="hidden lg:block">
             <MembersPanel onClose={() => setMembersOpen(false)} />
           </div>
         )}
         {membersOpen && (
-          <div className="fixed inset-0 z-40 flex justify-end md:hidden">
+          <div className="fixed inset-0 z-40 flex justify-end lg:hidden">
             <div className="absolute inset-0 bg-black/50" onClick={() => setMembersOpen(false)} />
             <div className="relative z-10">
               <MembersPanel onClose={() => setMembersOpen(false)} />
@@ -470,7 +470,7 @@ export function ChatHeader({
         ? "Канал"
         : "Группа";
   return (
-      <div className="safe-t flex items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)]/80 px-4 py-3 backdrop-blur-md md:px-6">
+      <div className="safe-t safe-x flex items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)]/80 px-4 py-3 backdrop-blur-md md:px-6">
       <div className="flex items-center gap-3">
         <button
           onClick={onOpenSidebar}
