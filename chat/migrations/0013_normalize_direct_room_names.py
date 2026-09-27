@@ -42,17 +42,14 @@ def forwards(apps, schema_editor):
 
 
 def _merge_room(apps, source, target):
-    for model_name, field in (
-        ("Message", "room"),
-        ("ReadStatus", "room"),
-        ("Reaction", "room"),
-        ("RoomBan", "room"),
-    ):
-        try:
-            model = apps.get_model("chat", model_name)
-        except LookupError:
-            continue
-        model.objects.filter(**{field: source}).update(**{field: target})
+    """Переносит содержимое source в target.
+
+    ReadStatus и Reaction ссылаются на Message, поэтому переезжают
+    вместе с сообщениями автоматически.
+    """
+    for model_name in ("Message", "RoomBan"):
+        model = apps.get_model("chat", model_name)
+        model.objects.filter(room=source).update(room=target)
 
 
 def backwards(apps, schema_editor):
