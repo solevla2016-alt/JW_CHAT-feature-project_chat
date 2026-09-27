@@ -331,7 +331,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
       />
 
       <div className="flex h-full min-w-0 flex-1 flex-col border-r border-[var(--border-color)] bg-[var(--bg-primary)]">
-        <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <button
               onClick={() => selectContext("home")}
@@ -409,7 +409,7 @@ onClick={async () => {
         </div>
 
         {showCreateServer && (
-          <form onSubmit={handleCreateServer} className="mx-3 mb-2 flex flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+          <form onSubmit={handleCreateServer} className="mx-3 mb-2 flex shrink-0 flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Новый сервер
@@ -446,7 +446,7 @@ onClick={async () => {
         )}
 
         {showCreateRoom && (
-          <form onSubmit={handleCreateRoom} className="mx-3 mb-2 flex flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+          <form onSubmit={handleCreateRoom} className="mx-3 mb-2 flex shrink-0 flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Новая комната
@@ -573,11 +573,11 @@ onClick={async () => {
         )}
         {activeId === "home" && (
           <>
-            <div className="flex items-center gap-2 px-5 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            <div className="flex shrink-0 items-center gap-2 px-5 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
               <BookUser size={13} />
               Контакты
             </div>
-            <div className="mx-2 mb-2 flex gap-2 overflow-x-auto scrollbar-thin px-1">
+            <div className="mx-2 mb-2 flex shrink-0 gap-2 overflow-x-auto scrollbar-thin px-1">
               {users.map((u) => (
                 <button
                   key={u.id}
@@ -613,14 +613,14 @@ onClick={async () => {
           </>
         )}
 
-        <div className="flex items-center gap-2 px-5 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+        <div className="flex shrink-0 items-center gap-2 px-5 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
           <Users size={13} />
           {activeId === "home"
             ? "Сообщения"
             : `Каналы · ${servers.find((s) => s.id === activeId)?.member_count ?? 0} участников`}
         </div>
 
-        <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-2">
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-2 pb-2">
           {filteredRooms.length === 0 ? (
             <div className="px-3 py-8 text-center text-sm text-[var(--text-muted)]">
               {search
