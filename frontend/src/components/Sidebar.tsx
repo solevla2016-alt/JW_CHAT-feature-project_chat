@@ -330,7 +330,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
         homeUnread={homeUnread}
       />
 
-      <div className="flex h-full min-w-0 flex-1 flex-col border-r border-[var(--border-color)] bg-[var(--bg-primary)]">
+      <div className="relative flex h-full min-w-0 flex-1 flex-col border-r border-[var(--border-color)] bg-[var(--bg-primary)]">
         <div className="flex shrink-0 items-center justify-between px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <button
@@ -408,8 +408,11 @@ onClick={async () => {
           </div>
         </div>
 
+        {(showCreateServer || showCreateRoom) && (
+          <div className="absolute inset-0 z-30 flex flex-col bg-[var(--bg-primary)]">
+            <div className="flex-1 overflow-y-auto scrollbar-thin">
         {showCreateServer && (
-          <form onSubmit={handleCreateServer} className="mx-3 mb-2 flex shrink-0 flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+          <form onSubmit={handleCreateServer} className="mx-3 mb-2 flex flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Новый сервер
@@ -446,7 +449,7 @@ onClick={async () => {
         )}
 
         {showCreateRoom && (
-          <form onSubmit={handleCreateRoom} className="mx-3 mb-2 flex shrink-0 flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+          <form onSubmit={handleCreateRoom} className="mx-3 mb-2 flex flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Новая комната
@@ -549,6 +552,9 @@ onClick={async () => {
               {createLoading ? <LoaderSpinner /> : "Создать"}
             </button>
           </form>
+        )}
+            </div>
+          </div>
         )}
 
         <button
