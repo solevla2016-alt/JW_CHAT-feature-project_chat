@@ -4,6 +4,11 @@ from rest_framework import serializers
 from .models import ChatRoom, Message, ReadStatus, Server
 
 
+def direct_room_name(user_a_id: int, user_b_id: int) -> str:
+    low, high = sorted((user_a_id, user_b_id))
+    return f"dm-{low}-{high}"
+
+
 class ServerSerializer(serializers.ModelSerializer):
     owner = serializers.CharField(source="owner.username", read_only=True)
     member_count = serializers.SerializerMethodField()
@@ -57,12 +62,35 @@ class ChatRoomSerializer(serializers.ModelSerializer):
     unread_count = serializers.SerializerMethodField()
     members = serializers.SerializerMethodField()
     is_ai = serializers.SerializerMethodField()
+    peer_id = serializers.SerializerMethodField()
+    peer_username = serializers.SerializerMethodField()
     server = serializers.PrimaryKeyRelatedField(read_only=True)
     server_name = serializers.CharField(source="server.name", read_only=True, default="")
 
     class Meta:
         model = ChatRoom
-        fields = ("id", "name", "description", "avatar", "is_private", "room_type", "owner", "member_count", "members", "last_message", "unread_count", "server", "server_name", "is_ai", "created_at")
+        fields = ("id", "name", "description", "avatar", "is_private", "room_type", "owner", "member_count", "members", "last_message", "unread_count", "server", "server_name", "is_ai", "peer_id", "peer_username", "created_at")
+
+    def _resolve_peer(self, obj: ChatRoom):
+        if obj.room_type != ChatRoom.RoomType.DIRECT:
+            return None
+        ai_username = settings.AI_ASSISTANT_USERNAME
+        members = list(obj.members.all())
+        if obj.name == ai_username:
+            return next((m for m in members if m.username == ai_username), None)
+        request = self.context.get("request")
+        me = getattr(request, "user", None)
+        if not me or me.is_anonymous:
+            return None
+        return next((m for m in members if m.id != me.id), None)
+
+    def get_peer_id(self, obj: ChatRoom) -> int | None:
+        peer = self._resolve_peer(obj)
+        return peer.id if peer else None
+
+    def get_peer_username(self, obj: ChatRoom) -> str | None:
+        peer = self._resolve_peer(obj)
+        return peer.username if peer else None
 
     def get_is_ai(self, obj: ChatRoom) -> bool:
         return (
@@ -127,6 +155,7 @@ class ChatRoomCreateSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    name = serializers.CharField(max_length=100)
 
     class Meta:
         model = ChatRoom
@@ -138,12 +167,26 @@ class ChatRoomCreateSerializer(serializers.ModelSerializer):
         user_model = get_user_model()
         request = self.context["request"]
         server = validated_data.pop("server", None)
+        description = validated_data.pop("description", "")
+        is_private = validated_data.pop("is_private", False)
 
         room_type = validated_data.get("room_type")
 
         if room_type == ChatRoom.RoomType.DIRECT:
-            other = user_model.objects.filter(username__iexact=validated_data.get("name", "")).first()
-            if other and other.id != request.user.id and other.username != "AI Assistant":
+            other = user_model.objects.filter(
+                username__iexact=validated_data.get("name", "")
+            ).first()
+            if other is None:
+                raise serializers.ValidationError(
+                    {"direct": "Пользователь с таким именем не найден"}
+                )
+            if other.id == request.user.id:
+                raise serializers.ValidationError(
+                    {"direct": "Нельзя создать личный чат с самим собой"}
+                )
+
+            ai_username = settings.AI_ASSISTANT_USERNAME
+            if other.username != ai_username:
                 privacy = other.message_privacy
                 if privacy == user_model.MessagePrivacy.NOBODY:
                     raise serializers.ValidationError(
@@ -159,15 +202,32 @@ class ChatRoomCreateSerializer(serializers.ModelSerializer):
                             {"direct": f"{other.username} принимает сообщения только от контактов"}
                         )
 
+                target_name = direct_room_name(request.user.id, other.id)
+            else:
+                target_name = ai_username
+
+            room, _created = ChatRoom.objects.get_or_create(
+                name=target_name,
+                defaults={
+                    "owner": request.user,
+                    "server": server,
+                    "description": description,
+                    "is_private": True,
+                    "room_type": room_type,
+                },
+            )
+            room.members.add(request.user, other)
+            return room
+
         room = ChatRoom.objects.create(
             owner=request.user,
             server=server,
+            description=description,
+            is_private=is_private,
             **validated_data,
         )
         room.members.add(request.user)
-        if room_type == ChatRoom.RoomType.DIRECT and other:
-            room.members.add(other)
-        elif server is not None:
+        if server is not None:
             room.members.add(*server.members.all())
         return room
 

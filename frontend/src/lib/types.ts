@@ -82,6 +82,8 @@ export interface ChatRoom {
   server: number | null;
   server_name?: string;
   is_ai?: boolean;
+  peer_id?: number | null;
+  peer_username?: string | null;
   last_message: {
     text: string;
     username: string;

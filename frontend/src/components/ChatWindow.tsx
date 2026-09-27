@@ -175,11 +175,13 @@ export function ChatWindow() {
   }, []);;
 
   const directPeer = useMemo(() => {
-    if (activeRoom?.room_type !== "direct") return null;
+    const room = activeRoom;
+    if (!room || room.room_type !== "direct") return null;
+    if (room.peer_username) return room.peer_username;
     const me = user?.username ?? "";
-    const fromMembers = activeRoom.members?.find((m) => m.username !== me)?.username;
+    const fromMembers = room.members?.find((m) => m.username !== me)?.username;
     if (fromMembers) return fromMembers;
-    return activeRoom.name !== me ? activeRoom.name : null;
+    return room.name !== me ? room.name : null;
   }, [activeRoom, user]);
 
   const handleStartCall = useCallback(
@@ -257,7 +259,11 @@ export function ChatWindow() {
     <div className="flex h-full min-w-0 flex-1">
       <div className="flex h-full min-w-0 flex-1 flex-col">
         <ChatHeader
-          roomName={activeRoom.name}
+          roomName={
+            activeRoom.room_type === "direct"
+              ? (directPeer ?? activeRoom.name)
+              : activeRoom.name
+          }
           roomType={activeRoom.room_type}
           onOpenSidebar={() => setSidebarOpen(true)}
           onToggleSearch={() => setSearchOpen((v) => !v)}

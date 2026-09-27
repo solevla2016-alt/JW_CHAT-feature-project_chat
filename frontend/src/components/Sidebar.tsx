@@ -22,6 +22,13 @@ import { cn, getInitials } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { ServerRail, type RailKey } from "./ServerRail";
 
+function directTitle(room: ChatRoom): string {
+  if (room.room_type !== "direct") return room.name;
+  if (room.peer_username) return room.peer_username;
+  if (room.is_ai) return "AI Assistant";
+  return room.name;
+}
+
 export function Sidebar({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const {
@@ -52,6 +59,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
   const [serverName, setServerName] = useState("");
   const [serverDesc, setServerDesc] = useState("");
   const [serverLoading, setServerLoading] = useState(false);
+  const [directError, setDirectError] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
   const [statusDraft, setStatusDraft] = useState("");
@@ -152,7 +160,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
 
   const filteredRooms = rooms
     .filter(filterContext)
-    .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((r) => directTitle(r).toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       if (Boolean(a.is_ai) !== Boolean(b.is_ai)) return a.is_ai ? -1 : 1;
       return 0;
@@ -271,7 +279,9 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
   };
 
   const openDirect = async (other: User) => {
-    const existing = rooms.find((r) => r.room_type === "direct" && r.name === other.username);
+    const existing = rooms.find(
+      (r) => r.room_type === "direct" && r.peer_id === other.id
+    );
     if (existing) {
       setActiveRoom(existing);
       setSidebarOpen(false);
@@ -296,8 +306,10 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
       }
       setActiveRoom(room);
       setSidebarOpen(false);
-    } catch {
-      // ignore
+    } catch (err) {
+      setDirectError(
+        err instanceof Error ? err.message : "Не удалось открыть личный чат"
+      );
     }
   };
 
@@ -554,6 +566,11 @@ onClick={async () => {
           <Plus size={14} />
           {activeId === "home" ? "Начать разговор" : "Создать канал"}
         </button>
+        {directError && (
+          <p className="mx-3 mb-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-500">
+            {directError}
+          </p>
+        )}
         {activeId === "home" && (
           <>
             <div className="flex items-center gap-2 px-5 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -640,7 +657,9 @@ onClick={async () => {
                   >
                     {isDirect ? (
                       (() => {
-                        const peer = users.find((u) => u.username === room.name);
+                        const peer = users.find(
+                          (u) => u.id === room.peer_id || u.username === directTitle(room)
+                        );
                         return peer?.avatar ? (
                           <img src={mediaUrl(peer.avatar)} alt={peer.username} className="h-full w-full object-cover" />
                         ) : (
@@ -663,7 +682,9 @@ onClick={async () => {
                       {!isDirect && (
                         <span className={isActive ? "text-[var(--brand-primary)]" : "text-[var(--text-muted)]"}>#</span>
                       )}
-                      <span className="truncate">{room.name}</span>
+                      <span className="truncate">
+                        {isDirect ? directTitle(room) : room.name}
+                      </span>
                     </div>
                     <div className="truncate text-xs text-[var(--text-muted)]">
                       {room.last_message

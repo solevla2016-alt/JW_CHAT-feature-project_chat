@@ -920,3 +920,105 @@ class TestEnsureAiChatCommand:
         request.user = owner
         data = ChatRoomSerializer(group_room, context={"request": request}).data
         assert data["is_ai"] is False
+
+    def test_adds_ai_member_to_existing_room(self, owner):
+        from django.conf import settings
+        from django.core.management import call_command
+
+        ai = User.objects.create_user(
+            username=settings.AI_ASSISTANT_USERNAME, password="pass12345"
+        )
+        room = ChatRoom.objects.create(
+            name=settings.AI_ASSISTANT_USERNAME,
+            room_type=ChatRoom.RoomType.DIRECT,
+            owner=owner,
+            is_private=True,
+        )
+        room.members.add(owner)
+        assert not room.members.filter(id=ai.id).exists()
+
+        call_command("ensure_ai_chat", verbosity=0)
+
+        assert room.members.filter(id=ai.id).exists()
+
+
+@pytest.mark.django_db()
+class TestDirectRoomsAreNotShared:
+    """Личный чат должен быть уникален для пары, а не для собеседника."""
+
+    def _create(self, api_client, user, peer_username):
+        api_client.force_authenticate(user=user)
+        return api_client.post(
+            "/api/chat/rooms/create/",
+            {
+                "name": peer_username,
+                "description": "",
+                "is_private": True,
+                "room_type": "direct",
+            },
+            format="json",
+        )
+
+    def test_two_users_can_dm_same_person(self, api_client, owner, member, stranger):
+        first = self._create(api_client, owner, stranger.username)
+        second = self._create(api_client, member, stranger.username)
+
+        assert first.status_code == 201, first.data
+        assert second.status_code == 201, second.data
+        assert first.data["id"] != second.data["id"]
+
+    def test_dm_rooms_are_private_to_the_pair(self, api_client, owner, member, stranger):
+        owner_room = self._create(api_client, owner, stranger.username)
+        member_room = self._create(api_client, member, stranger.username)
+
+        owner_members = {m["id"] for m in owner_room.data["members"]}
+        member_members = {m["id"] for m in member_room.data["members"]}
+        shared = owner_members & member_members
+
+        assert shared == {stranger.id}
+
+    def test_repeated_request_reuses_same_room(self, api_client, owner, stranger):
+        first = self._create(api_client, owner, stranger.username)
+        second = self._create(api_client, owner, stranger.username)
+
+        assert first.data["id"] == second.data["id"]
+        assert ChatRoom.objects.filter(room_type="direct").count() == 1
+
+    def test_serializer_exposes_peer(self, api_client, owner, stranger):
+        created = self._create(api_client, owner, stranger.username)
+
+        assert created.data["peer_id"] == stranger.id
+        assert created.data["peer_username"] == stranger.username
+
+    def test_dm_with_self_is_rejected(self, api_client, owner):
+        resp = self._create(api_client, owner, owner.username)
+        assert resp.status_code == 400
+
+    def test_dm_with_unknown_user_is_rejected(self, api_client, owner):
+        resp = self._create(api_client, owner, "nobody-here")
+        assert resp.status_code == 400
+
+    def test_room_name_is_pair_scoped(self, api_client, owner, member, stranger):
+        owner_room = self._create(api_client, owner, stranger.username)
+        member_room = self._create(api_client, member, stranger.username)
+
+        low, high = sorted((owner.id, stranger.id))
+        assert owner_room.data["name"] == f"dm-{low}-{high}"
+        low, high = sorted((member.id, stranger.id))
+        assert member_room.data["name"] == f"dm-{low}-{high}"
+
+    def test_ai_room_stays_shared(self, api_client, owner, member):
+        from django.conf import settings
+
+        User.objects.create_user(
+            username=settings.AI_ASSISTANT_USERNAME, password="pass12345"
+        )
+
+        first = self._create(api_client, owner, settings.AI_ASSISTANT_USERNAME)
+        second = self._create(api_client, member, settings.AI_ASSISTANT_USERNAME)
+
+        assert first.status_code == 201, first.data
+        assert second.status_code == 201, second.data
+        assert first.data["id"] == second.data["id"]
+        assert first.data["is_ai"] is True
+

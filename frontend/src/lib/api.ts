@@ -22,10 +22,33 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
-    throw new Error(error.error ?? error.message ?? "Ошибка запроса");
+    throw new Error(extractErrorMessage(error));
   }
 
   return res.json();
+}
+
+function extractErrorMessage(payload: unknown): string {
+  if (typeof payload === "string" && payload) return payload;
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    for (const key of ["error", "message", "detail"]) {
+      const value = record[key];
+      if (typeof value === "string" && value) return value;
+    }
+
+    const messages: string[] = [];
+    for (const value of Object.values(record)) {
+      if (Array.isArray(value)) {
+        messages.push(value.filter((v): v is string => typeof v === "string").join(" "));
+      } else if (typeof value === "string") {
+        messages.push(value);
+      }
+    }
+    const joined = messages.filter(Boolean).join(" ");
+    if (joined) return joined;
+  }
+  return "Ошибка запроса";
 }
 
 export async function uploadFile<T>(

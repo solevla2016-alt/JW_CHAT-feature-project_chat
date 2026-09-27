@@ -42,8 +42,7 @@ class Command(BaseCommand):
         if new_ids:
             room.members.add(*new_ids)
 
-        if room_created:
-            room.members.add(ai_user)
+        room.members.add(ai_user)
 
         self.stdout.write(
             self.style.SUCCESS(
