@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { CornerUpLeft, Mic, Paperclip, Pencil, Plus, SendHorizonal, Smile, Square, Video, X } from "lucide-react";
 import { API_URL } from "@/lib/api";
 
+export const MAX_MESSAGE_LENGTH = 8000;
+
 const EMOJI_LIST = [
   "😀", "😂", "🤣", "😊", "😍", "😘", "😉", "😎",
   "🤔", "😴", "🥳", "😢", "😭", "😡", "🤯", "🥺",
@@ -31,6 +33,7 @@ export function ChatInput({
   editingTarget,
   onCancelEdit,
   onSaveEdit,
+  onError,
 }: {
   onSend: (text: string) => void;
   onSendWithAttachment: (text: string, attachment: { attachment_type: string; attachment_url: string; attachment_name: string; duration?: number | null }) => void;
@@ -42,6 +45,7 @@ export function ChatInput({
   editingTarget: { id: number; text: string } | null;
   onCancelEdit: () => void;
   onSaveEdit: (text: string) => void;
+  onError: (message: string) => void;
 }) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -163,6 +167,11 @@ export function ChatInput({
 
     if (!text && !pending) return;
 
+    if (text.length > MAX_MESSAGE_LENGTH) {
+      onError(`Сообщение длиннее ${MAX_MESSAGE_LENGTH} символов — сократите на ${text.length - MAX_MESSAGE_LENGTH}`);
+      return;
+    }
+
     // AI-запрос через префикс /ai
     if (!pending && text.startsWith("/ai ") && text.length > 4) {
       onSendAiRequest(text.slice(4).trim());
@@ -233,7 +242,8 @@ export function ChatInput({
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  const canSend = value.trim() || pending;
+  const tooLong = value.length > MAX_MESSAGE_LENGTH;
+  const canSend = (value.trim() || pending) && !tooLong;
 
   return (
     <div className="relative border-t border-[var(--border-color)] px-4 py-3 md:px-6">
@@ -437,6 +447,13 @@ export function ChatInput({
           </>
         )}
       </div>
+
+      {tooLong && (
+        <p className="mt-1.5 text-right text-xs text-red-500">
+          Сообщение длиннее {MAX_MESSAGE_LENGTH} символов — сократите на{" "}
+          {value.length - MAX_MESSAGE_LENGTH}
+        </p>
+      )}
     </div>
   );
 }

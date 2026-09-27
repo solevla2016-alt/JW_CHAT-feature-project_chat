@@ -1,5 +1,7 @@
 import json
 
+MAX_MESSAGE_LENGTH = 8000
+
 
 def validate_message(text_data: str) -> tuple[str | None, str | None]:
     try:
@@ -18,7 +20,10 @@ def validate_message(text_data: str) -> tuple[str | None, str | None]:
     if not message:
         return None, "Сообщение не может быть пустым"
 
-    if len(message) > 2000:
-        return None, "Сообщение не может быть длиннее 2000 символов"
+    if len(message) > MAX_MESSAGE_LENGTH:
+        return None, (
+            f"Сообщение не может быть длиннее {MAX_MESSAGE_LENGTH} символов "
+            f"(сейчас {len(message)})"
+        )
 
     return message, None

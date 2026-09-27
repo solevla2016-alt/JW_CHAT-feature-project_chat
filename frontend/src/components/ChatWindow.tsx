@@ -35,6 +35,8 @@ export function ChatWindow() {
   const [editingTarget, setEditingTarget] = useState<{ id: number; text: string } | null>(null);
   const typingUsers = useChatStore((s) => s.typingUsers);
   const aiTyping = useChatStore((s) => s.aiTyping);
+  const chatError = useChatStore((s) => s.chatError);
+  const setChatError = useChatStore((s) => s.setChatError);
   const [searchOpen, setSearchOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState<boolean>(() =>
     typeof window !== "undefined" ? window.innerWidth >= 1280 : false
@@ -285,6 +287,19 @@ export function ChatWindow() {
           onCallVideo={() => void handleStartCall("video")}
         />
 
+        {chatError && (
+          <div className="flex items-start gap-2 border-b border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-500 md:px-6">
+            <span className="min-w-0 flex-1">{chatError}</span>
+            <button
+              onClick={() => setChatError(null)}
+              aria-label="Закрыть"
+              className="shrink-0 rounded p-0.5 hover:bg-red-500/20"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {screenState && (
           <ScreenShareBar
             broadcaster={screenState.broadcaster}
@@ -393,6 +408,7 @@ export function ChatWindow() {
           if (editingTarget) editMessage(editingTarget.id, text);
           setEditingTarget(null);
         }}
+        onError={setChatError}
       />
         </div>
 

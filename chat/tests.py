@@ -17,7 +17,7 @@ from chat.ai_service import ask_gigachat, build_history, get_ai_answer
 from chat.consumers import ChatConsumer
 from chat.models import ChatRoom, Message, Reaction, RoomBan, Server
 from chat.serializers import ChatRoomSerializer, MessageSerializer
-from chat.validators import validate_message
+from chat.validators import MAX_MESSAGE_LENGTH, validate_message
 
 User = get_user_model()
 
@@ -106,8 +106,21 @@ class TestValidator:
         assert err is not None
 
     def test_too_long(self):
-        _, err = validate_message(json.dumps({"message": "x" * 2001}))
+        _, err = validate_message(json.dumps({"message": "x" * (MAX_MESSAGE_LENGTH + 1)}))
         assert err is not None
+        assert str(MAX_MESSAGE_LENGTH) in err
+
+    def test_large_message_accepted(self):
+        text = "x" * MAX_MESSAGE_LENGTH
+        msg, err = validate_message(json.dumps({"message": text}))
+        assert err is None
+        assert msg == text
+
+    def test_presentation_length_message_accepted(self):
+        text = "Обсуждаем плюсы и минусы. " * 100
+        msg, err = validate_message(json.dumps({"message": text}))
+        assert err is None
+        assert msg == text.strip()
 
     def test_bad_json(self):
         _, err = validate_message("not json")

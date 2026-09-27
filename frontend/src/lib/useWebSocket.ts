@@ -50,6 +50,7 @@ export function useWebSocket(roomName: string | null) {
     setAiTyping,
     setMessagePinned,
     setCall,
+    setChatError,
   } = useChatStore();
 
   const refreshLists = useCallback(async () => {
@@ -292,7 +293,7 @@ export function useWebSocket(roomName: string | null) {
           break;
 
         case "error":
-          console.error("WS error:", data.error);
+          setChatError(data.error ?? "Ошибка соединения");
           break;
       }
     };
@@ -308,7 +309,7 @@ export function useWebSocket(roomName: string | null) {
     ws.onerror = (error) => {
       console.debug("[ws] WebSocket error:", error);
     };
-  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, setRooms, setServers, updateRoomMeta, refreshLists, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned, setCall]);
+  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, setRooms, setServers, updateRoomMeta, refreshLists, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned, setCall, setChatError]);
 
   useEffect(() => {
     connect();

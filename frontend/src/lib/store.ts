@@ -24,6 +24,7 @@ interface ChatState {
   typingUsers: TypingUser[];
   sidebarOpen: boolean;
   aiTyping: boolean;
+  chatError: string | null;
   screenSession: ScreenSession | null;
   call: CallState | null;
   callLocalStream: MediaStream | null;
@@ -46,6 +47,7 @@ interface ChatState {
   addTypingUser: (username: string) => void;
   removeTypingUser: (username: string) => void;
   setAiTyping: (typing: boolean) => void;
+  setChatError: (message: string | null) => void;
   setMessagePinned: (id: number, pinned: boolean) => void;
   setMessageTranscription: (id: number, transcription: string) => void;
   resetRoomUnread: (roomId: number) => void;
@@ -74,6 +76,7 @@ export const useChatStore = create<ChatState>((set) => ({
   sidebarOpen:
     typeof window === "undefined" ? true : window.innerWidth >= 768,
   aiTyping: false,
+  chatError: null,
   screenSession: null,
   call: null,
   callLocalStream: null,
@@ -137,6 +140,7 @@ export const useChatStore = create<ChatState>((set) => ({
       return { typingUsers: state.typingUsers.filter((t) => t.username !== username) };
     }),
   setAiTyping: (typing) => set({ aiTyping: typing }),
+  setChatError: (message) => set({ chatError: message }),
   setMessagePinned: (id, pinned) =>
     set((state) => ({
       messages: state.messages.map((m) =>
