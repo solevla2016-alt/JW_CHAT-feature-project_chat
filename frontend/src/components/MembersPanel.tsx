@@ -101,6 +101,7 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
   if (!activeRoom) return null;
 
   const members = activeRoom.members ?? [];
+  const isOwner = Boolean(activeRoom.owner) && activeRoom.owner === user?.username;
   // сортировка: сначала онлайн, потом остальные
   const sorted = [...members].sort((a, b) => {
     const aOnline = onlineUsers.some((u) => u.username === a.username) ? 0 : 1;
@@ -184,16 +185,6 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
           </p>
         </div>
         <div className="flex items-center gap-1">
-          {activeRoom.owner === user?.username && (
-            <button
-              onClick={() => setInviteOpen(true)}
-              className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--brand-primary)]"
-              title="Пригласить участника"
-              aria-label="Пригласить участника"
-            >
-              <UserPlus size={16} />
-            </button>
-          )}
           <button
             onClick={onClose}
             className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
@@ -330,6 +321,18 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
+
+      {isOwner && !inviteOpen && (
+        <div className="border-t border-[var(--border-color)] p-3">
+          <button
+            onClick={() => setInviteOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--brand-primary)] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-hover)]"
+          >
+            <UserPlus size={16} />
+            Добавить участника
+          </button>
+        </div>
+      )}
 
       {inviteOpen && (
         <div className="border-t border-[var(--border-color)] p-3">
