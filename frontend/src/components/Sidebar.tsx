@@ -330,7 +330,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
         homeUnread={homeUnread}
       />
 
-      <div className="relative flex h-full min-w-0 flex-1 flex-col border-r border-[var(--border-color)] bg-[var(--bg-primary)]">
+      <div className="relative flex h-full w-full shrink-0 flex-col border-r border-[var(--border-color)] bg-[var(--bg-primary)] md:w-60 xl:w-72">
         <div className="flex shrink-0 items-center justify-between px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <button
@@ -341,7 +341,10 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
             >
               <Home size={16} />
             </button>
-            <div className="truncate text-sm font-bold">
+            <div
+              className="truncate text-sm font-bold"
+              title={activeId === "home" ? "JOIN WORK!" : (currentServer?.name ?? "Сервер")}
+            >
               {activeId === "home" ? "JOIN WORK!" : currentServer?.name ?? "Сервер"}
             </div>
           </div>
