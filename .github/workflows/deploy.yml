@@ -25,6 +25,24 @@ jobs:
       - name: Save images to tar
         run: docker save jwchat-backend:latest jwchat-frontend:latest | gzip > jwchat-images.tar.gz
 
+      - name: Free space on VDS before upload
+        env:
+          VDS_SSH_KEY_B64: ${{ secrets.VDS_SSH_KEY_B64 }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          printf '%s' "$VDS_SSH_KEY_B64" | base64 -d > ~/.ssh/vds_key
+          chmod 600 ~/.ssh/vds_key
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -p ${{ secrets.VDS_PORT || 22 }} ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }} '
+            set -e
+            rm -f /tmp/jwchat-images.tar.gz
+            apt-get clean || true
+            rm -rf /var/lib/apt/lists/* || true
+            journalctl --vacuum-size=32M || true
+            docker image prune -af >/dev/null 2>&1 || true
+            df -h / | tail -1
+          '
+
       - name: Upload images to VDS
         env:
           VDS_SSH_KEY_B64: ${{ secrets.VDS_SSH_KEY_B64 }}
@@ -58,12 +76,33 @@ jobs:
           script_stop: true
           script: |
             set -e
-            docker image prune -f >/dev/null 2>&1 || true
+            apt-get clean || true
+            docker image prune -af >/dev/null 2>&1 || true
             cd /opt/jwchat
+            df -h / | tail -1
             docker load -i /tmp/jwchat-images.tar.gz
             docker compose -f docker-compose.vds.yml up -d
             docker compose -f docker-compose.vds.yml ps
             rm -f /tmp/jwchat-images.tar.gz
+
+      - name: Cleanup and verify on VDS
+        if: always()
+        env:
+          VDS_SSH_KEY_B64: ${{ secrets.VDS_SSH_KEY_B64 }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$VDS_SSH_KEY_B64" | base64 -d > ~/.ssh/vds_key
+          chmod 600 ~/.ssh/vds_key
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/vds_key -p ${{ secrets.VDS_PORT || 22 }} ${{ secrets.VDS_USER }}@${{ secrets.VDS_HOST }} '
+            rm -f /tmp/jwchat-images.tar.gz
+            cd /opt/jwchat
+            echo "--- services ---"
+            docker compose -f docker-compose.vds.yml ps --format "{{.Service}} | {{.Status}}" | sort
+            echo "--- site ---"
+            curl -s -o /dev/null -w "login HTTP %{http_code}\n" https://jwchat.duckdns.org/login
+            echo "--- disk ---"
+            df -h / | tail -1
+          '
 
       - name: Report result
         if: always()
