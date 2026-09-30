@@ -846,6 +846,49 @@ class TestRoomApi:
         assert resp.status_code == 201
         assert resp.data["attachment_type"] == "image"
 
+    def test_upload_limits_endpoint(self, api_client, member, settings):
+        api_client.force_authenticate(user=member)
+        resp = api_client.get("/api/chat/upload-limits/")
+        assert resp.status_code == 200
+        assert resp.data["audio"] == settings.MAX_AUDIO_UPLOAD_SIZE
+        assert resp.data["video"] == settings.MAX_VIDEO_UPLOAD_SIZE
+        assert resp.data["image"] == settings.MAX_IMAGE_UPLOAD_SIZE
+        assert resp.data["file"] == settings.MAX_FILE_UPLOAD_SIZE
+
+    def test_upload_rejects_oversized_audio(self, api_client, group_room, member, settings):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        settings.MAX_AUDIO_UPLOAD_SIZE = 1024
+        api_client.force_authenticate(user=member)
+        resp = api_client.post(
+            f"/api/chat/rooms/{group_room.id}/upload/",
+            {"file": SimpleUploadedFile("big.webm", b"0" * 4096, content_type="audio/webm")},
+            format="multipart",
+        )
+        assert resp.status_code == 400
+        # the message names the limit, so the user knows how much to cut
+        assert "1.0 \u041a\u0411" in resp.data["error"]
+
+    def test_upload_accepts_audio_within_limit(self, api_client, group_room, member, settings):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        settings.MAX_AUDIO_UPLOAD_SIZE = 1024 * 1024
+        api_client.force_authenticate(user=member)
+        resp = api_client.post(
+            f"/api/chat/rooms/{group_room.id}/upload/",
+            {"file": SimpleUploadedFile("ok.webm", b"0" * 2048, content_type="audio/webm")},
+            format="multipart",
+        )
+        assert resp.status_code == 201
+        assert resp.data["attachment_type"] == "audio"
+
+    def test_format_size(self):
+        from chat.api_views import format_size
+
+        assert format_size(512) == "512 \u0411"
+        assert format_size(25 * 1024 * 1024) == "25.0 \u041c\u0411"
+        assert format_size(10 * 1024 * 1024) == "10.0 \u041c\u0411"
+
 
 @pytest.mark.django_db()
 class TestServerApi:
@@ -1034,4 +1077,69 @@ class TestDirectRoomsAreNotShared:
         assert second.status_code == 201, second.data
         assert first.data["id"] == second.data["id"]
         assert first.data["is_ai"] is True
+
+
+@pytest.mark.django_db()
+class TestAiAnswerQueue:
+    """AI answers must be produced one at a time, in the order asked."""
+
+    async def test_answers_are_serialised(self):
+        from chat.consumers import _get_ai_queue
+
+        queue = _get_ai_queue("test-queue-room")
+        assert queue.pending == 0
+
+        order: list[str] = []
+        running = 0
+        overlapped = False
+
+        async def job(name: str) -> None:
+            nonlocal running, overlapped
+            running += 1
+            if running > 1:
+                overlapped = True
+            await asyncio.sleep(0.01)
+            order.append(name)
+            running -= 1
+
+        async def enqueued(name: str) -> None:
+            queue.pending += 1
+            try:
+                async with queue.lock:
+                    await job(name)
+            finally:
+                queue.pending -= 1
+
+        await asyncio.gather(enqueued("first"), enqueued("second"), enqueued("third"))
+
+        assert order == ["first", "second", "third"]
+        assert overlapped is False
+        assert queue.pending == 0
+
+    async def test_typing_indicator_covers_whole_queue(self):
+        from chat.consumers import _get_ai_queue
+
+        queue = _get_ai_queue("test-queue-typing")
+        states: list[bool] = []
+
+        async def broadcast(is_typing: bool) -> None:
+            states.append(is_typing)
+
+        async def enqueued() -> None:
+            queue.pending += 1
+            if queue.pending == 1:
+                await broadcast(True)
+            try:
+                async with queue.lock:
+                    await asyncio.sleep(0.01)
+            finally:
+                queue.pending -= 1
+                if queue.pending == 0:
+                    await broadcast(False)
+
+        await asyncio.gather(enqueued(), enqueued(), enqueued())
+
+        # indicator is raised once and lowered once, not per question
+        assert states == [True, False]
+        assert queue.pending == 0
 

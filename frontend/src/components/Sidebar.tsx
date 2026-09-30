@@ -19,6 +19,7 @@ import { API_URL, apiFetch, getServerInvite, mediaUrl, uploadAvatar } from "@/li
 import { useChatStore } from "@/lib/store";
 import type { ChatRoom, Server, User } from "@/lib/types";
 import { cn, getInitials } from "@/lib/utils";
+import { CACHE_KEYS, readCache, writeCache } from "@/lib/cache";
 import { ThemeToggle } from "./ThemeToggle";
 import { ServerRail, type RailKey } from "./ServerRail";
 
@@ -115,9 +116,12 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
       if (res.ok) {
         const data: Array<{ id: number; username: string; avatar: string | null; status: string; is_ai?: boolean }> = await res.json();
         setUsers(data);
+        writeCache(CACHE_KEYS.users, data);
       }
     } catch {
-      // ignore
+      // Офлайн: контакты берём из кэша, чтобы список не пустовал.
+      const cached = readCache<Array<{ id: number; username: string; avatar: string | null; status: string; is_ai?: boolean }>>(CACHE_KEYS.users);
+      if (cached?.length) setUsers(cached);
     }
   }, []);
 
@@ -144,12 +148,20 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
   const didAutoSelect = useRef(false);
   useEffect(() => {
     if (didAutoSelect.current) return;
-    if (servers.length > 0) {
-      didAutoSelect.current = true;
-      selectContext(servers[0].id);
+    if (servers.length === 0) return;
+    didAutoSelect.current = true;
+
+    // Комната уже восстановлена из адреса или из хранилища: показываем
+    // её контекст и не переключаемся на первую комнату первого сервера.
+    if (activeRoom) {
+      const sid = activeRoom.server ?? "home";
+      setActiveId(sid);
+      setActiveServer(sid === "home" ? null : servers.find((s) => s.id === sid) ?? null);
+      return;
     }
+    selectContext(servers[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [servers.length]);
+  }, [servers.length, activeRoom?.id]);
 
   const currentServer = activeId === "home" ? null : servers.find((s) => s.id === activeId) ?? null;
 

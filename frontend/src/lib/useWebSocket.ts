@@ -24,16 +24,19 @@ import {
   handleRemoteHangup,
   setCallSender,
 } from "./calls";
+import { CACHE_KEYS, readCache, writeCache } from "./cache";
 
 const WS_BASE = WS_URL;
 
-export function useWebSocket(roomName: string | null) {
+export function useWebSocket(roomName: string | null, roomId: number | null = null) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const reconnectAttempts = useRef(0);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const isTypingRef = useRef(false);
   const pendingMessagesRef = useRef<Record<string, unknown>[]>([]);
+  const roomIdRef = useRef<number | null>(roomId);
+  roomIdRef.current = roomId;
 
   const {
     addMessage,
@@ -51,6 +54,7 @@ export function useWebSocket(roomName: string | null) {
     setMessagePinned,
     setCall,
     setChatError,
+    setConnectionState,
   } = useChatStore();
 
   const refreshLists = useCallback(async () => {
@@ -59,17 +63,35 @@ export function useWebSocket(roomName: string | null) {
         fetch(`${API_URL}/chat/rooms/`, { credentials: "include" }).then((r) => r.json()),
         fetch(`${API_URL}/chat/servers/`, { credentials: "include" }).then((r) => r.json()),
       ]);
-      setRooms(rooms as ChatRoom[]);
-      setServers(servers as Server[]);
+      if (Array.isArray(rooms)) {
+        setRooms(rooms as ChatRoom[]);
+        writeCache(CACHE_KEYS.rooms, rooms);
+      }
+      if (Array.isArray(servers)) {
+        setServers(servers as Server[]);
+        writeCache(CACHE_KEYS.servers, servers);
+      }
+      setConnectionState("online");
     } catch {
-      // ignore
+      // Offline or slow: keep the last known lists on screen.
+      const cachedRooms = readCache<ChatRoom[]>(CACHE_KEYS.rooms);
+      const cachedServers = readCache<Server[]>(CACHE_KEYS.servers);
+      if (cachedRooms) setRooms(cachedRooms);
+      if (cachedServers) setServers(cachedServers);
+      setConnectionState(navigator.onLine ? "slow" : "offline");
     }
-  }, [API_URL, setRooms, setServers]);
+  }, [API_URL, setRooms, setServers, setConnectionState]);
 
   const connect = useCallback(() => {
     if (!roomName) return;
 
     console.debug("[ws] connecting to room:", roomName);
+
+    // Показываем кэш комнаты сразу, не дожидаясь ответа сервера.
+    if (roomIdRef.current !== null) {
+      const cached = readCache<Message[]>(CACHE_KEYS.history(roomIdRef.current));
+      if (cached && cached.length > 0) setMessages(cached);
+    }
 
     let ws: WebSocket;
     try {
@@ -85,6 +107,7 @@ export function useWebSocket(roomName: string | null) {
     ws.onopen = () => {
       console.debug("[ws] open", roomName);
       reconnectAttempts.current = 0;
+      setConnectionState("online");
       setSignalSender((msg) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify(msg));
@@ -106,6 +129,9 @@ export function useWebSocket(roomName: string | null) {
         case "history":
           if (data.messages) {
             setMessages(data.messages);
+            if (roomIdRef.current !== null) {
+              writeCache(CACHE_KEYS.history(roomIdRef.current), data.messages);
+            }
           }
           break;
 
@@ -300,6 +326,7 @@ export function useWebSocket(roomName: string | null) {
 
     ws.onclose = () => {
       console.debug("[ws] closed", roomName);
+      setConnectionState(navigator.onLine ? "slow" : "offline");
       if (wsRef.current !== ws) return;
       const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000);
       reconnectAttempts.current += 1;
@@ -309,7 +336,7 @@ export function useWebSocket(roomName: string | null) {
     ws.onerror = (error) => {
       console.debug("[ws] WebSocket error:", error);
     };
-  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, setRooms, setServers, updateRoomMeta, refreshLists, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned, setCall, setChatError]);
+  }, [roomName, addMessage, removeMessage, updateMessage, setMessages, setOnlineUsers, setRooms, setServers, updateRoomMeta, refreshLists, addTypingUser, removeTypingUser, setMessageReactions, setAiTyping, setMessagePinned, setCall, setChatError, setConnectionState]);
 
   useEffect(() => {
     connect();

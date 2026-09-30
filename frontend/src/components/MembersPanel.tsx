@@ -21,6 +21,7 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
   const [inviteSelected, setInviteSelected] = useState<number[]>([]);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteMsg, setInviteMsg] = useState("");
+  const [showOffline, setShowOffline] = useState(false);
 
   const canModerate =
     !!activeRoom &&
@@ -102,14 +103,20 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
 
   const members = activeRoom.members ?? [];
   const isOwner = Boolean(activeRoom.owner) && activeRoom.owner === user?.username;
+  const isOnline = (username: string) => onlineUsers.some((u) => u.username === username);
   // сортировка: сначала онлайн, потом остальные
   const sorted = [...members].sort((a, b) => {
-    const aOnline = onlineUsers.some((u) => u.username === a.username) ? 0 : 1;
-    const bOnline = onlineUsers.some((u) => u.username === b.username) ? 0 : 1;
+    const aOnline = isOnline(a.username) ? 0 : 1;
+    const bOnline = isOnline(b.username) ? 0 : 1;
     return aOnline - bOnline;
   });
 
-  const onlineCount = members.filter((m) => onlineUsers.some((u) => u.username === m.username)).length;
+  // По умолчанию показываем только тех, кто сейчас в сети.
+  const onlineMembers = sorted.filter(
+    (m) => isOnline(m.username) || m.is_ai || m.username === user?.username
+  );
+  const visibleMembers = showOffline ? sorted : onlineMembers;
+  const onlineCount = members.filter((m) => isOnline(m.username)).length;
 
   const handleStartMemberCall = useCallback(
     async (username: string, mode: CallMode) => {
@@ -185,6 +192,15 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
           </p>
         </div>
         <div className="flex items-center gap-1">
+          {members.length > onlineCount && (
+            <button
+              onClick={() => setShowOffline((v) => !v)}
+              className="rounded-lg px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--brand-primary)]"
+              title={showOffline ? "Показать только тех, кто в сети" : "Показать всех участников"}
+            >
+              {showOffline ? "Только онлайн" : "Показать всех"}
+            </button>
+          )}
           <button
             onClick={onClose}
             className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
@@ -196,7 +212,7 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-3">
-        {sorted.map((m) => {
+        {visibleMembers.map((m) => {
           const isOnline = onlineUsers.some((u) => u.username === m.username) || m.is_ai;
           const isOwner = m.username === activeRoom.owner;
           const isSelf = m.username === user?.username;
@@ -291,6 +307,11 @@ export function MembersPanel({ onClose }: { onClose: () => void }) {
             </div>
           );
         })}
+        {visibleMembers.length === 0 && (
+          <div className="px-3 py-8 text-center text-sm text-[var(--text-muted)]">
+            Сейчас никто не в сети
+          </div>
+        )}
 
         {canModerate && bans.length > 0 && (
           <div className="mt-3 border-t border-[var(--border-color)] pt-2">

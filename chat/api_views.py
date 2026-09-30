@@ -44,6 +44,40 @@ ATTACHMENT_MAP = {
 }
 
 
+def format_size(num_bytes: int) -> str:
+    """Human readable size for upload limit messages."""
+    value = float(num_bytes)
+    for unit in ("Б", "КБ", "МБ", "ГБ"):
+        if value < 1024 or unit == "ГБ":
+            rounded = int(value) if unit == "Б" else round(value, 1)
+            return f"{rounded} {unit}"
+        value /= 1024
+    return f"{value:.1f} ГБ"
+
+
+def upload_limits_payload() -> dict[str, int]:
+    """Limits exposed to the client so it can validate before uploading."""
+    from django.conf import settings as djsettings
+
+    return {
+        "image": djsettings.MAX_IMAGE_UPLOAD_SIZE,
+        "audio": djsettings.MAX_AUDIO_UPLOAD_SIZE,
+        "video": djsettings.MAX_VIDEO_UPLOAD_SIZE,
+        "file": djsettings.MAX_FILE_UPLOAD_SIZE,
+    }
+
+
+def _upload_limit(attachment_type: str) -> int:
+    from django.conf import settings as djsettings
+
+    return {
+        "image": djsettings.MAX_IMAGE_UPLOAD_SIZE,
+        "audio": djsettings.MAX_AUDIO_UPLOAD_SIZE,
+        "video": djsettings.MAX_VIDEO_UPLOAD_SIZE,
+        "file": djsettings.MAX_FILE_UPLOAD_SIZE,
+    }.get(attachment_type, djsettings.MAX_FILE_UPLOAD_SIZE)
+
+
 @api_view(["GET"])
 def rooms_list_view(request: Request) -> Response:
     rooms = (
@@ -209,6 +243,15 @@ def room_add_member_view(request: Request, room_id: int) -> Response:
 
 
 @csrf_exempt
+@api_view(["GET"])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def upload_limits_view(request: Request) -> Response:
+    """Allowed attachment sizes so the client can show and enforce them."""
+    return Response(upload_limits_payload())
+
+
+@csrf_exempt
 @api_view(["POST"])
 @authentication_classes([CsrfExemptSessionAuthentication])
 @permission_classes([permissions.IsAuthenticated])
@@ -225,13 +268,15 @@ def room_upload_view(request: Request, room_id: int) -> Response:
     if not file:
         return Response({"error": "Файл не прикреплён"}, status=status.HTTP_400_BAD_REQUEST)
 
-    from django.conf import settings as djsettings
-
-    if file.size > getattr(djsettings, "FILE_UPLOAD_MAX_SIZE", 100 * 1024 * 1024):
-        return Response({"error": "Файл слишком большой"}, status=status.HTTP_400_BAD_REQUEST)
-
     content_type = file.content_type or ""
     attachment_type = ATTACHMENT_MAP.get(content_type, "file")
+
+    limit = _upload_limit(attachment_type)
+    if file.size > limit:
+        return Response(
+            {"error": f"Файл слишком большой. Максимум для этого типа: {format_size(limit)}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     ext = os.path.splitext(file.name)[1].lower()
     path = f"uploads/{uuid.uuid4().hex}{ext}"

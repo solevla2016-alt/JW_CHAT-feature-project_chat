@@ -17,6 +17,7 @@ from .api_views import (
     server_invite_view,
     server_join_view,
     servers_list_view,
+    upload_limits_view,
 )
 
 urlpatterns = [
@@ -25,6 +26,7 @@ urlpatterns = [
     path("servers/<int:server_id>/invite/", server_invite_view, name="api_server_invite"),
     path("servers/join/<str:token>/", server_join_view, name="api_server_join"),
     path("rooms/", rooms_list_view, name="api_rooms"),
+    path("upload-limits/", upload_limits_view, name="api_upload_limits"),
     path("rooms/create/", room_create_view, name="api_room_create"),
     path("rooms/<int:room_id>/messages/", room_messages_view, name="api_room_messages"),
     path("rooms/<int:room_id>/messages/<int:message_id>/", room_message_delete_view, name="api_room_message_delete"),

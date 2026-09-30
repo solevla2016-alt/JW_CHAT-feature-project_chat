@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import sys
 from collections import defaultdict
@@ -17,6 +18,31 @@ from .permissions import can_delete_message, is_banned
 from .validators import validate_message
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
+
+
+class _AiRoomQueue:
+    """Serialises AI answers per room.
+
+    Every question used to spawn its own task, so several questions sent
+    in a row produced parallel calls and the answers arrived as one batch.
+    The lock keeps them strictly in order, one reply at a time.
+    """
+
+    def __init__(self) -> None:
+        self.lock = asyncio.Lock()
+        self.pending = 0
+
+
+_AI_QUEUES: dict[str, _AiRoomQueue] = {}
+
+
+def _get_ai_queue(room_name: str) -> _AiRoomQueue:
+    queue = _AI_QUEUES.get(room_name)
+    if queue is None:
+        queue = _AiRoomQueue()
+        _AI_QUEUES[room_name] = queue
+    return queue
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -302,7 +328,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             and message_text
             and await self._room_has_ai()
         ):
-            ai_task = asyncio.create_task(self._generate_ai_reply(message_text))
+            ai_task = asyncio.create_task(self._enqueue_ai_reply(message_text))
             self._ai_tasks.add(ai_task)
             ai_task.add_done_callback(self._ai_tasks.discard)
 
@@ -386,24 +412,34 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self._send_error("Укажите вопрос для AI")
             return
 
-        await self._generate_ai_reply(prompt)
+        await self._enqueue_ai_reply(prompt)
 
-    async def _generate_ai_reply(self, prompt: str) -> None:
-        # Показываем индикатор "AI печатает"
+    async def _enqueue_ai_reply(self, prompt: str) -> None:
+        """Answer questions one at a time, in the order they arrived."""
+        queue = _get_ai_queue(self.room.name)
+        queue.pending += 1
+        if queue.pending == 1:
+            await self._send_ai_typing(True)
+        try:
+            async with queue.lock:
+                await self._generate_ai_reply(prompt)
+        except Exception:
+            logger.exception("AI reply failed for room %s", self.room.name)
+        finally:
+            queue.pending -= 1
+            if queue.pending == 0:
+                await self._send_ai_typing(False)
+
+    async def _send_ai_typing(self, is_typing: bool) -> None:
         await self.channel_layer.group_send(
             self.room_group_name,
-            {"type": "ai_typing", "is_typing": True},
+            {"type": "ai_typing", "is_typing": is_typing},
         )
 
-        try:
-            history = await self._get_recent_messages(self.room.id, settings.AI_CONTEXT_MESSAGES)
-            history = build_history(history)
-            answer = await get_ai_answer(prompt, history)
-        finally:
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {"type": "ai_typing", "is_typing": False},
-            )
+    async def _generate_ai_reply(self, prompt: str) -> None:
+        history = await self._get_recent_messages(self.room.id, settings.AI_CONTEXT_MESSAGES)
+        history = build_history(history)
+        answer = await get_ai_answer(prompt, history)
 
         if not answer:
             return

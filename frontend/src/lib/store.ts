@@ -25,6 +25,7 @@ interface ChatState {
   sidebarOpen: boolean;
   aiTyping: boolean;
   chatError: string | null;
+  connectionState: "online" | "slow" | "offline";
   screenSession: ScreenSession | null;
   call: CallState | null;
   callLocalStream: MediaStream | null;
@@ -48,6 +49,7 @@ interface ChatState {
   removeTypingUser: (username: string) => void;
   setAiTyping: (typing: boolean) => void;
   setChatError: (message: string | null) => void;
+  setConnectionState: (state: "online" | "slow" | "offline") => void;
   setMessagePinned: (id: number, pinned: boolean) => void;
   setMessageTranscription: (id: number, transcription: string) => void;
   resetRoomUnread: (roomId: number) => void;
@@ -77,6 +79,7 @@ export const useChatStore = create<ChatState>((set) => ({
     typeof window === "undefined" ? true : window.innerWidth >= 768,
   aiTyping: false,
   chatError: null,
+  connectionState: "online",
   screenSession: null,
   call: null,
   callLocalStream: null,
@@ -90,7 +93,16 @@ export const useChatStore = create<ChatState>((set) => ({
       rooms: state.rooms.map((r) => (r.id === roomId ? { ...r, ...meta } : r)),
     })),
   setActiveServer: (server) => set({ activeServer: server, activeRoom: null, messages: [] }),
-  setActiveRoom: (room) => set({ activeRoom: room, messages: [], typingUsers: [], screenSession: null }),
+  setActiveRoom: (room) =>
+    set((state) => {
+      // Re-selecting the room that is already open must not wipe the
+      // loaded history: the websocket does not reconnect, so no new
+      // "history" frame would arrive to repopulate it.
+      if (state.activeRoom?.id === room?.id) {
+        return state.activeRoom === room ? state : { activeRoom: room };
+      }
+      return { activeRoom: room, messages: [], typingUsers: [], screenSession: null };
+    }),
   setRoomMembers: (roomId, members) =>
     set((state) => ({
       rooms: state.rooms.map((r) => (r.id === roomId ? { ...r, members } : r)),
@@ -141,6 +153,7 @@ export const useChatStore = create<ChatState>((set) => ({
     }),
   setAiTyping: (typing) => set({ aiTyping: typing }),
   setChatError: (message) => set({ chatError: message }),
+  setConnectionState: (state) => set({ connectionState: state }),
   setMessagePinned: (id, pinned) =>
     set((state) => ({
       messages: state.messages.map((m) =>

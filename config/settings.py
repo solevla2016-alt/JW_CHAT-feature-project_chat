@@ -159,8 +159,14 @@ CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", str(_secure_cookies_default
 
 # --- Uploads: не в память, файлы >2.5MB сразу на диск (частично в память не тянем) ---
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2_500_000
-DATA_UPLOAD_MAX_MEMORY_SIZE = 15_000_000
-FILE_UPLOAD_MAX_SIZE = int(os.getenv("FILE_UPLOAD_MAX_SIZE", str(100 * 1024 * 1024)))
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(120 * 1024 * 1024)))
+FILE_UPLOAD_MAX_SIZE = int(os.getenv("FILE_UPLOAD_MAX_SIZE", str(200 * 1024 * 1024)))
+
+# Лимиты по типу вложения (байты). Фронтенд показывает те же значения.
+MAX_AUDIO_UPLOAD_SIZE = int(os.getenv("MAX_AUDIO_UPLOAD_SIZE", str(25 * 1024 * 1024)))
+MAX_VIDEO_UPLOAD_SIZE = int(os.getenv("MAX_VIDEO_UPLOAD_SIZE", str(200 * 1024 * 1024)))
+MAX_IMAGE_UPLOAD_SIZE = int(os.getenv("MAX_IMAGE_UPLOAD_SIZE", str(10 * 1024 * 1024)))
+MAX_FILE_UPLOAD_SIZE = int(os.getenv("MAX_FILE_UPLOAD_SIZE", str(50 * 1024 * 1024)))
 
 # --- AI Assistant (GigaChat — бесплатный для разработчиков) ---
 AI_ASSISTANT_USERNAME = os.getenv("AI_ASSISTANT_USERNAME", "AI Assistant")

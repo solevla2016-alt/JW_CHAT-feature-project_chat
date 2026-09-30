@@ -9,6 +9,8 @@ import { useChatStore } from "@/lib/store";
 import type { ChatRoom, Server, User } from "@/lib/types";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatWindow } from "@/components/ChatWindow";
+import { ACTIVE_ROOM_KEY, persistActiveRoom } from "@/lib/activeRoom";
+import { CACHE_KEYS, readCache, writeCache } from "@/lib/cache";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -42,12 +44,39 @@ export default function ChatPage() {
         ]);
         setRooms(rooms);
         setServers(servers);
+        writeCache(CACHE_KEYS.rooms, rooms);
+        writeCache(CACHE_KEYS.servers, servers);
         if (rooms.length > 0 && !activeRoom) {
-          if (servers.length === 0) {
+          // Возвращаемся ровно на ту комнату, на которой был сделан
+          // перезагруз: сначала адрес из ?room=<id>, затем последняя
+          // открытая комната из localStorage.
+          const params = new URLSearchParams(window.location.search);
+          const fromUrl = Number(params.get("room"));
+          const fromStorage = Number(localStorage.getItem(ACTIVE_ROOM_KEY));
+          const wanted = rooms.find((r) => r.id === fromUrl) ?? rooms.find((r) => r.id === fromStorage);
+          if (wanted) {
+            setActiveRoom(wanted);
+          } else if (servers.length === 0) {
             setActiveRoom(rooms[0]);
           }
         }
       } catch {
+        // Нет сети: показываем последние известные данные из кэша.
+        const cachedRooms = readCache<ChatRoom[]>(CACHE_KEYS.rooms);
+        const cachedServers = readCache<Server[]>(CACHE_KEYS.servers);
+        if (cachedRooms?.length) {
+          setRooms(cachedRooms);
+          const params = new URLSearchParams(window.location.search);
+          const fromUrl = Number(params.get("room"));
+          const fromStorage = Number(localStorage.getItem(ACTIVE_ROOM_KEY));
+          const wanted =
+            cachedRooms.find((r) => r.id === fromUrl) ??
+            cachedRooms.find((r) => r.id === fromStorage);
+          if (wanted) setActiveRoom(wanted);
+          setLoading(false);
+          return;
+        }
+        if (cachedServers?.length) setServers(cachedServers);
         router.push("/login");
       } finally {
         setLoading(false);
@@ -55,6 +84,11 @@ export default function ChatPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!activeRoom) return;
+    persistActiveRoom(activeRoom.id);
+  }, [activeRoom?.id]);
 
   if (loading) {
     return (

@@ -24,7 +24,7 @@ import { CallPanel } from "./CallPanel";
 
 export function ChatWindow() {
   const { activeRoom, messages, setSidebarOpen } = useChatStore();
-  const { sendMessage, startTyping, editMessage, deleteMessage, toggleReaction, sendAiRequest, togglePin, sendRead } = useWebSocket(activeRoom?.name ?? null);
+  const { sendMessage, startTyping, editMessage, deleteMessage, toggleReaction, sendAiRequest, togglePin, sendRead } = useWebSocket(activeRoom?.name ?? null, activeRoom?.id ?? null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const resetRoomUnread = useChatStore((s) => s.resetRoomUnread);
   const call = useChatStore((s) => s.call);
@@ -37,6 +37,7 @@ export function ChatWindow() {
   const aiTyping = useChatStore((s) => s.aiTyping);
   const chatError = useChatStore((s) => s.chatError);
   const setChatError = useChatStore((s) => s.setChatError);
+  const connectionState = useChatStore((s) => s.connectionState);
   const [searchOpen, setSearchOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState<boolean>(() =>
     typeof window !== "undefined" ? window.innerWidth >= 1280 : false
@@ -231,12 +232,36 @@ export function ChatWindow() {
     }
   }, [searchQuery, activeRoom]);
 
+  // Jump instantly instead of animating through the whole history, and
+  // only when the user is already at the bottom: a smooth scroll after
+  // an AI answer walked the viewport over every earlier question.
+  const stickToBottomRef = useRef(true);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    }
-  }, [messages.length, activeRoom?.id]);
+    if (!el) return;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottomRef.current = distance < 120;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [activeRoom?.id]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (!stickToBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, activeRoom?.id, aiTyping]);
+
+  // Switching rooms always starts at the newest message.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    stickToBottomRef.current = true;
+  }, [activeRoom?.id]);
 
   useEffect(() => {
     if (!activeRoom || messages.length === 0) return;
@@ -286,6 +311,21 @@ export function ChatWindow() {
           onCallAudio={() => void handleStartCall("audio")}
           onCallVideo={() => void handleStartCall("video")}
         />
+
+        {connectionState !== "online" && (
+          <div
+            className={`flex items-center gap-2 border-b px-4 py-2 text-xs md:px-6 ${
+              connectionState === "offline"
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-600"
+                : "border-sky-500/30 bg-sky-500/10 text-sky-600"
+            }`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            {connectionState === "offline"
+              ? "Нет соединения — показываем последние загруженные данные"
+              : "Соединение слабое, идёт восстановление…"}
+          </div>
+        )}
 
         {chatError && (
           <div className="flex items-start gap-2 border-b border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-500 md:px-6">
@@ -549,21 +589,6 @@ export function ChatHeader({
         >
           🔍
         </button>
-        <div className="hidden -space-x-2 md:flex">
-          {onlineUsers.slice(0, 5).map((u) => (
-            <div
-              key={u.username}
-              className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border-2 border-[var(--bg-primary)] bg-[var(--brand-primary)] text-[10px] font-bold text-white"
-              title={u.username}
-            >
-              {u.avatar ? (
-                <img src={mediaUrl(u.avatar)} alt={u.username} className="h-full w-full object-cover" />
-              ) : (
-                u.username.slice(0, 2).toUpperCase()
-              )}
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );

@@ -3,8 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { CornerUpLeft, Mic, Paperclip, Pencil, Plus, SendHorizonal, Smile, Square, Video, X } from "lucide-react";
 import { API_URL } from "@/lib/api";
-
-export const MAX_MESSAGE_LENGTH = 8000;
+import {
+  checkFileSize,
+  DEFAULT_UPLOAD_LIMITS,
+  formatSize,
+  MAX_MESSAGE_LENGTH,
+} from "@/lib/uploadLimits";
 
 const EMOJI_LIST = [
   "😀", "😂", "🤣", "😊", "😍", "😘", "😉", "😎",
@@ -56,10 +60,24 @@ export function ChatInput({
   const [recording, setRecording] = useState(false);
   const [recordingType, setRecordingType] = useState<"audio" | "video" | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [uploadLimits, setUploadLimits] = useState<Record<string, number>>(DEFAULT_UPLOAD_LIMITS);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_URL}/chat/upload-limits/`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data && typeof data.audio === "number") setUploadLimits(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (editingTarget && textareaRef.current) {
@@ -116,6 +134,16 @@ export function ChatInput({
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
+        const recorded = chunksRef.current.reduce((sum, c) => sum + c.size, 0);
+        const limit = uploadLimits[type];
+        if (recorded > limit && recorder.state === "recording") {
+          recorder.stop();
+          onError(
+            `Запись превысила лимит: максимум ${formatSize(limit)} для ${
+              type === "audio" ? "аудио" : "видео"
+            }`
+          );
+        }
       };
 
       recorder.onstop = () => {
@@ -149,6 +177,12 @@ export function ChatInput({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const tooBig = checkFileSize(file, uploadLimits);
+    if (tooBig) {
+      onError(tooBig);
+      e.target.value = "";
+      return;
+    }
     const type = file.type.startsWith("audio/") ? "audio"
       : file.type.startsWith("video/") ? "video"
       : "file";
@@ -418,6 +452,13 @@ export function ChatInput({
                       <Paperclip size={18} />
                       <span className="text-xs">Файл</span>
                     </button>
+                    <p className="col-span-2 mt-1 border-t border-[var(--border-color)] pt-2 text-center text-[10px] leading-tight text-[var(--text-muted)]">
+                      Аудио до {formatSize(uploadLimits.audio)} · видео до{" "}
+                      {formatSize(uploadLimits.video)}
+                      <br />
+                      Фото до {formatSize(uploadLimits.image)} · файлы до{" "}
+                      {formatSize(uploadLimits.file)}
+                    </p>
                   </div>
                 </>
               )}
