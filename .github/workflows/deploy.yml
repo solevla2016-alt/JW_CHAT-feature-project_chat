@@ -39,7 +39,10 @@ jobs:
             apt-get clean || true
             rm -rf /var/lib/apt/lists/* || true
             journalctl --vacuum-size=32M || true
-            docker image prune -af >/dev/null 2>&1 || true
+            # Only dangling images: -a would also delete dependency images
+            # (postgres, redis, coturn) whenever their container is down.
+            docker image prune -f >/dev/null 2>&1 || true
+            docker builder prune -f >/dev/null 2>&1 || true
             df -h / | tail -1
           '
 
@@ -77,11 +80,15 @@ jobs:
           script: |
             set -e
             apt-get clean || true
-            docker image prune -af >/dev/null 2>&1 || true
+            # Old jwchat images lose their tag once the new ones are loaded and
+            # become dangling, so the default prune removes them. Pruning with
+            # -a would risk deleting images of stopped dependency containers.
+            docker image prune -f >/dev/null 2>&1 || true
             cd /opt/jwchat
             df -h / | tail -1
             docker load -i /tmp/jwchat-images.tar.gz
             docker compose -f docker-compose.vds.yml up -d
+            docker image prune -f >/dev/null 2>&1 || true
             docker compose -f docker-compose.vds.yml ps
             rm -f /tmp/jwchat-images.tar.gz
 
@@ -102,6 +109,16 @@ jobs:
             curl -s -o /dev/null -w "login HTTP %{http_code}\n" https://jwchat.duckdns.org/login
             echo "--- disk ---"
             df -h / | tail -1
+            echo "--- images (tag + dangling) ---"
+            docker images -a --format "{{.Repository}}:{{.Tag}} {{.Size}}" | sort
+            echo "--- restart counts (should stay low) ---"
+            for c in $(docker compose -f docker-compose.vds.yml ps -q); do
+              docker inspect --format "{{.Name}} restarts={{.RestartCount}}" "$c"
+            done
+            docker inspect --format "{{.Name}} restarts={{.RestartCount}}" jwchat-turn-1 2>/dev/null || true
+            echo "--- largest container logs ---"
+            find /var/lib/docker/containers -name "*-json.log" -printf "%s %p\n" 2>/dev/null \
+              | sort -rn | head -3 | awk "{printf \"%.1f MB %s\n\", \$1/1048576, \$2}"
           '
 
       - name: Report result
