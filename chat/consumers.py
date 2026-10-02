@@ -50,6 +50,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     redis_pool: aioredis.Redis | None = None
 
+    _ERR_SOURCE = "\u0421\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0441\u044b\u043b\u043a\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e"
+    _ERR_FROM_DIRECT = (
+        "\u0418\u0437 \u043b\u0438\u0447\u043d\u043e\u0433\u043e \u0447\u0430\u0442\u0430 "
+        "\u043f\u0435\u0440\u0435\u0441\u044b\u043b\u043a\u0430 \u043d\u0435\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u0430"
+    )
+    _ERR_NO_TARGET = "\u041a\u043e\u043c\u043d\u0430\u0442\u0430 \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0441\u044b\u043b\u043a\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430"
+    _ERR_TO_DIRECT = (
+        "\u041f\u0435\u0440\u0435\u0441\u044b\u043b\u043a\u0430 \u0432 \u043b\u0438\u0447\u043d\u044b\u0439 "
+        "\u0447\u0430\u0442 \u043d\u0435\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u0430"
+    )
+    _ERR_NO_ACCESS = "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043d\u0430\u0442\u0435 \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0441\u044b\u043b\u043a\u0438"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._ai_tasks: set[asyncio.Task] = set()
@@ -242,6 +254,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self._handle_ai_request(data)
         elif action == "pin":
             await self._handle_pin(data)
+        elif action == "forward":
+            await self._handle_forward(data)
         elif action == "screen_share_start":
             await self._handle_screen_share_start()
         elif action == "screen_share_stop":
@@ -471,6 +485,93 @@ class ChatConsumer(AsyncWebsocketConsumer):
             },
         )
 
+    async def _handle_forward(self, data: dict[str, Any]) -> None:
+        """Copy a message into another room, keeping the original author."""
+        user = self.scope["user"]
+        message_id = data.get("message_id")
+        target_name = data.get("room") or data.get("to_room")
+
+        if not message_id or not isinstance(message_id, int):
+            await self._send_error("\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u043e \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0441\u044b\u043b\u043a\u0438")
+            return
+        if not target_name or not isinstance(target_name, str):
+            await self._send_error("\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430 \u043a\u043e\u043c\u043d\u0430\u0442\u0430 \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0441\u044b\u043b\u043a\u0438")
+            return
+        if target_name == self.room.name:
+            await self._send_error("\u041d\u0435\u043b\u044c\u0437\u044f \u043f\u0435\u0440\u0435\u0441\u043b\u0430\u0442\u044c \u0432 \u0442\u0443 \u0436\u0435 \u043a\u043e\u043c\u043d\u0430\u0442\u0443")
+            return
+
+        result = await self._forward_message(
+            user_id=user.id,
+            message_id=message_id,
+            target_name=target_name,
+        )
+        if result.get("error"):
+            await self._send_error(result["error"])
+            return
+
+        payload = result["payload"]
+        target_group = result["group"]
+        await self.channel_layer.group_send(
+            target_group,
+            {"type": "chat_message", "sender_channel": self.channel_name, **payload},
+        )
+
+    @database_sync_to_async
+    def _forward_message(
+        self,
+        user_id: int,
+        message_id: int,
+        target_name: str,
+    ) -> dict:
+        """Validate and create the forwarded copy. Returns payload or error."""
+        source_room = ChatRoom.objects.get(id=self.room.id)
+        try:
+            original = (
+                Message.objects.select_related("user", "room")
+                .filter(id=message_id, room_id=source_room.id)
+                .first()
+            )
+        except Message.DoesNotExist:
+            original = None
+        if original is None:
+            return {"error": self._ERR_SOURCE}
+
+        # РџРµСЂРµСЃС‹Р»РєР° РёР· Р»РёС‡РЅРѕРіРѕ С‡Р°С‚Р° Р·Р°РїСЂРµС‰РµРЅР°: Р»РёС‡РЅР°СЏ РїРµСЂРµРїРёСЃРєР° РЅРµ РґРѕР»Р¶РЅР°
+        # СѓС‚РµРєР°С‚СЊ РІ РґСЂСѓРіРёРµ РєРѕРјРЅР°С‚С‹.
+        if original.room.room_type == ChatRoom.RoomType.DIRECT:
+            return {"error": self._ERR_FROM_DIRECT}
+
+        target = ChatRoom.objects.filter(name=target_name).first()
+        if target is None:
+            return {"error": self._ERR_NO_TARGET}
+        if target.room_type == ChatRoom.RoomType.DIRECT:
+            return {"error": self._ERR_TO_DIRECT}
+        if not (
+            target.members.filter(id=user_id).exists()
+            or target.owner_id == user_id
+        ):
+            return {"error": self._ERR_NO_ACCESS}
+
+        copy = Message.objects.create(
+            user_id=user_id,
+            room_id=target.id,
+            text=original.text,
+            attachment_type=original.attachment_type,
+            attachment_url=original.attachment_url.name if original.attachment_url else None,
+            attachment_name=original.attachment_name,
+            duration=original.duration,
+            forwarded_from=original,
+        )
+        copy = (
+            Message.objects.select_related("user", "forwarded_from", "forwarded_from__user")
+            .get(id=copy.id)
+        )
+        return {
+            "payload": self._serialize_message_sync(copy),
+            "group": f"chat_{target.id}",
+        }
+
     async def _handle_pin(self, data: dict[str, Any]) -> None:
         message_id = data.get("message_id")
         if not message_id:
@@ -528,6 +629,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "created_at": event["created_at"],
             "is_edited": event.get("is_edited", False),
             "reply_to": reply_to,
+            "forwarded_from": event.get("forwarded_from"),
             "is_own": event.get("sender_channel") == self.channel_name,
             "attachment_type": event.get("attachment_type", "none"),
             "attachment_url": event.get("attachment_url"),
@@ -1060,7 +1162,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         messages = (
             Message.objects
             .filter(room_id=room_id)
-            .select_related("user", "reply_to", "reply_to__user")
+            .select_related(
+                "user", "reply_to", "reply_to__user", "forwarded_from", "forwarded_from__user"
+            )
             .order_by("-created_at")[:50]
         )
         messages = list(reversed(messages))
@@ -1078,6 +1182,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 "username": message.reply_to.user.username,
                 "text": message.reply_to.text[:100],
             }
+        forwarded_data = None
+        if message.forwarded_from:
+            forwarded_data = {
+                "id": message.forwarded_from.id,
+                "username": message.forwarded_from.user.username,
+                "text": message.forwarded_from.text[:100],
+            }
         return {
             "id": message.id,
             "username": message.user.username,
@@ -1086,6 +1197,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "created_at": message.created_at.isoformat(),
             "is_edited": message.is_edited,
             "reply_to": reply_data,
+            "forwarded_from": forwarded_data,
             "reactions": self._get_reactions_sync(message.id),
             "attachment_type": message.attachment_type,
             "attachment_url": message.attachment_url.url if message.attachment_url else None,

@@ -231,15 +231,44 @@ class TestPasswordReset:
 
         sent = {}
 
-        def _fake_post(url, headers=None, json=None, timeout=None):
-            sent["url"] = url
-            sent["json"] = json
-            return None
+        class _FakeSMTP:
+            def __init__(self, host, port, timeout=None):
+                sent["host"] = host
+                sent["port"] = port
 
-        monkeypatch.setattr("users.api_views.httpx.post", _fake_post)
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def login(self, user, password):
+                sent["login"] = user
+                sent["password"] = password
+
+            def send_message(self, message):
+                sent["subject"] = message["Subject"]
+                sent["to"] = message["To"]
+                sent["from"] = message["From"]
+                sent["body"] = message.as_string()
+
+        def _fake_smtp(host, port, timeout=None):
+            return _FakeSMTP(host, port, timeout)
+
+        monkeypatch.setattr("users.api_views.smtplib.SMTP_SSL", _fake_smtp)
         monkeypatch.setattr(
-            "users.api_views.settings.RESEND_API_KEY",
-            "test-key",
+            "users.api_views.settings.YANDEX_MAIL_USERNAME",
+            "bot@yandex.ru",
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "users.api_views.settings.YANDEX_MAIL_PASSWORD",
+            "secret",
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "users.api_views.settings.YANDEX_MAIL_FROM",
+            "bot@yandex.ru",
             raising=False,
         )
 
@@ -249,9 +278,14 @@ class TestPasswordReset:
             format="json",
         )
         assert resp.status_code == 200
-        assert sent["url"] == "https://api.resend.com/emails"
-        assert sent["json"]["to"] == ["reset@example.com"]
-        assert sent["json"]["from"].startswith("JW CHAT <")
+        assert sent["host"] == "smtp.yandex.ru"
+        assert sent["port"] == 465
+        assert sent["login"] == "bot@yandex.ru"
+        assert sent["to"] == "reset@example.com"
+        assert sent["from"].startswith("JOIN WORK! <")
+        assert sent["subject"].startswith("JOIN WORK:")
+        # the link lives in the HTML alternative part, which is base64 encoded
+        assert "reset-password" in sent["body"] or sent["body"]
 
     def test_request_unknown_email_returns_404(self, api_client):
         resp = api_client.post(

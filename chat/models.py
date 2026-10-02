@@ -155,6 +155,14 @@ class Message(models.Model):
         related_name="replies",
     )
     is_edited = models.BooleanField(default=False)
+    forwarded_from = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="forwards",
+        help_text="Оригинал, если сообщение переслано",
+    )
     attachment_type = models.CharField(
         max_length=10,
         choices=AttachmentType.choices,

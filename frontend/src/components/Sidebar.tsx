@@ -10,17 +10,19 @@ import {
   LogOut,
   Megaphone,
   MessageCircle,
+  Moon,
   Plus,
   Search,
+  Sun,
   Users,
   X,
 } from "lucide-react";
 import { API_URL, apiFetch, getServerInvite, mediaUrl, uploadAvatar } from "@/lib/api";
+import { useTheme } from "@/lib/useTheme";
 import { useChatStore } from "@/lib/store";
 import type { ChatRoom, Server, User } from "@/lib/types";
 import { cn, getInitials } from "@/lib/utils";
 import { CACHE_KEYS, readCache, writeCache } from "@/lib/cache";
-import { ThemeToggle } from "./ThemeToggle";
 import { ServerRail, type RailKey } from "./ServerRail";
 
 function directTitle(room: ChatRoom): string {
@@ -46,6 +48,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
     onlineUsers,
     setSidebarOpen,
   } = useChatStore();
+  const { dark: themeDark, toggle: toggleTheme } = useTheme();
   const [search, setSearch] = useState("");
   const [activeId, setActiveId] = useState<RailKey>("home");
   const [showCreateRoom, setShowCreateRoom] = useState(false);
@@ -382,7 +385,6 @@ onClick={async () => {
                 <Link2 size={16} />
               </button>
             )}
-            <ThemeToggle />
             <button
               onClick={onClose}
               className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] md:hidden"
@@ -836,6 +838,13 @@ onClick={async () => {
                 </div>
 
                 <div className="my-2 h-px bg-[var(--border-color)]" />
+                <button
+                  onClick={toggleTheme}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  {themeDark ? <Sun size={15} /> : <Moon size={15} />}
+                  {themeDark ? "Светлая тема" : "Тёмная тема"}
+                </button>
                 <button
                   onClick={handleLogout}
                   className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"

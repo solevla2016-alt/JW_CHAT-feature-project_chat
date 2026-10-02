@@ -1,7 +1,8 @@
 import logging
+import smtplib
 from datetime import timedelta
+from email.message import EmailMessage
 
-import httpx
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.utils import timezone
@@ -244,9 +245,22 @@ def set_role_view(request: Request) -> Response:
 # ----------------------------------------------------------------------
 
 def _send_reset_email(to_email: str, reset_url: str, username: str) -> None:
-    """Транзакционное письмо с итоговой ссылкой сброса пароля через Resend API."""
-    if not settings.RESEND_API_KEY:
-        return
+    """Trancyionnoe pismo so sbrosom parolya cherez SMTP Yandex.
+
+    Returns None on success and raises RuntimeError when the message could
+    not be sent, so the caller can report a real failure instead of
+    pretending everything worked.
+    """
+    username_smtp = settings.YANDEX_MAIL_USERNAME
+    password_smtp = settings.YANDEX_MAIL_PASSWORD
+    sender = settings.YANDEX_MAIL_FROM or username_smtp
+
+    if not (username_smtp and password_smtp):
+        raise RuntimeError(
+            "\u041d\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043d\u044b SMTP "
+            "\u042f\u043d\u0434\u0435\u043a\u0441\u0430: \u0437\u0430\u0434\u0430\u0439\u0442\u0435 "
+            "YANDEX_MAIL_USERNAME \u0438 YANDEX_MAIL_PASSWORD"
+        )
 
     html = f"""<!doctype html>
 <html lang="ru">
@@ -255,35 +269,40 @@ def _send_reset_email(to_email: str, reset_url: str, username: str) -> None:
     <tr><td align="center">
       <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:16px;padding:32px;">
         <tr><td style="font-size:13px;color:#6b7280;padding-bottom:4px;">JOIN WORK!</td></tr>
-        <tr><td style="padding-top:4px;padding-bottom:16px;font-size:22px;font-weight:700;color:#111827;">Восстановление пароля</td></tr>
-        <tr><td style="font-size:14px;line-height:20px;color:#374151;padding-bottom:20px;">Здравствуйте, <b>{username}</b>! Для сброса пароля нажмите кнопку ниже (ссылка действует 1 час):</td></tr>
+        <tr><td style="padding-top:4px;padding-bottom:16px;font-size:22px;font-weight:700;color:#111827;">\u0412\u043e\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u043f\u0430\u0440\u043e\u043b\u044f</td></tr>
+        <tr><td style="font-size:14px;line-height:20px;color:#374151;padding-bottom:20px;">\u0417\u0434\u0440\u0430\u0432\u0441\u0442\u0432\u0443\u0439\u0442\u0435, <b>{username}</b>! \u0414\u043b\u044f \u0441\u0431\u0440\u043e\u0441\u0430 \u043f\u0430\u0440\u043e\u043b\u044f \u043d\u0430\u0436\u043c\u0438\u0442\u0435 \u043a\u043d\u043e\u043f\u043a\u0443 \u043d\u0438\u0436\u0435 (\u0441\u0441\u044b\u043b\u043a\u0430 \u0434\u0435\u0439\u0441\u0442\u0432\u0443\u0435\u0442 1 \u0447\u0430\u0441):</td></tr>
         <tr><td style="padding-bottom:24px;">
-          <a href="{reset_url}" style="display:inline-block;background:#4f46e5;color:#ffffff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none;">Сбросить пароль</a>
+          <a href="{reset_url}" style="display:inline-block;background:#4f46e5;color:#ffffff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none;">\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u043f\u0430\u0440\u043e\u043b\u044c</a>
         </td></tr>
-        <tr><td style="font-size:12px;color:#9ca3af;">Если вы не запрашивали сброс — просто проигнорируйте это письмо.</td></tr>
+        <tr><td style="font-size:12px;color:#9ca3af;">\u0415\u0441\u043b\u0438 \u0432\u044b \u043d\u0435 \u0437\u0430\u043f\u0440\u0430\u0448\u0438\u0432\u0430\u043b\u0438 \u0441\u0431\u0440\u043e\u0441 \u2014 \u043f\u0440\u043e\u0441\u0442\u043e \u043f\u0440\u043e\u0438\u0433\u043d\u043e\u0440\u0438\u0440\u0443\u0439\u0442\u0435 \u044d\u0442\u043e \u043f\u0438\u0441\u044c\u043c\u043e.</td></tr>
       </table>
     </td></tr>
   </table>
 </body>
 </html>"""
 
+    message = EmailMessage()
+    message["Subject"] = "JOIN WORK: восстановление пароля"
+    message["From"] = f"{settings.YANDEX_MAIL_FROM_NAME} <{sender}>"
+    message["To"] = to_email
+    message.set_content(
+        f"\u0417\u0434\u0440\u0430\u0432\u0441\u0442\u0432\u0443\u0439\u0442\u0435, {username}!\n"
+        f"\u0414\u043b\u044f \u0441\u0431\u0440\u043e\u0441\u0430 \u043f\u0430\u0440\u043e\u043b\u044f \u043e\u0442\u043a\u0440\u043e\u0439\u0442\u0435 \u0441\u0441\u044b\u043b\u043a\u0443:\n\n"
+        f"{reset_url}\n\n"
+        f"\u0421\u0441\u044b\u043b\u043a\u0430 \u0434\u0435\u0439\u0441\u0442\u0432\u0443\u0435\u0442 1 \u0447\u0430\u0441."
+    )
+    message.add_alternative(html, subtype="html")
+
     try:
-        httpx.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {settings.RESEND_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "from": f"{settings.RESEND_FROM_NAME} <{settings.RESEND_FROM_EMAIL}>",
-                "to": [to_email],
-                "subject": "JOIN WORK: восстановление пароля",
-                "html": html,
-            },
-            timeout=15,
-        )
-    except Exception:
-        logger.exception("Не удалось отправить письмо восстановления на %s", to_email)
+        with smtplib.SMTP_SSL(settings.YANDEX_SMTP_HOST, settings.YANDEX_SMTP_PORT, timeout=20) as server:
+            server.login(username_smtp, password_smtp)
+            server.send_message(message)
+    except smtplib.SMTPException as exc:
+        logger.exception("\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c \u043f\u0438\u0441\u044c\u043c\u043e \u043d\u0430 %s: %s", to_email, exc)
+        raise RuntimeError(str(exc)) from exc
+    except OSError as exc:
+        logger.exception("\u041d\u0435\u0442 \u0441\u0432\u044f\u0437\u0438 \u0441 SMTP \u042f\u043d\u0434\u0435\u043a\u0441\u0430: %s", exc)
+        raise RuntimeError(str(exc)) from exc
 
 
 @csrf_exempt
@@ -314,7 +333,14 @@ def password_reset_request_view(request: Request) -> Response:
         f"{settings.FRONTEND_URL}/reset-password?uid={urlsafe_base64_encode(str(user.pk).encode())}"
         f"&token={raw_token}"
     )
-    _send_reset_email(user.email, reset_url, user.username)
+    try:
+        _send_reset_email(user.email, reset_url, user.username)
+    except RuntimeError as exc:
+        logger.error("Письмо восстановления не отправлено: %s", exc)
+        return Response(
+            {"error": "Не удалось отправить письмо. Попробуйте позже."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     return Response({"ok": True, "token_id": token.pk})
 

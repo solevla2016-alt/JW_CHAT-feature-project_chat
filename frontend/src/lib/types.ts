@@ -30,6 +30,7 @@ export interface Message {
   created_at: string;
   is_edited: boolean;
   reply_to: ReplyTo | null;
+  forwarded_from?: ReplyTo | null;
   reactions: ReactionItem[];
   attachment_type: "none" | "image" | "audio" | "video" | "file";
   attachment_url: string | null;
@@ -124,6 +125,7 @@ export interface WebSocketMessage {
   created_at?: string;
   is_edited?: boolean;
   reply_to?: ReplyTo | null;
+  forwarded_from?: ReplyTo | null;
   reactions?: ReactionItem[];
   attachment_type?: "none" | "image" | "audio" | "video" | "file";
   attachment_url?: string | null;

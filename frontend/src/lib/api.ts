@@ -138,6 +138,11 @@ export async function setRoleApi<T>(username: string, role: string): Promise<T> 
   });
 }
 
+/** Удалить контакт: выйти из личного чата, чтобы он исчез из списка. */
+export async function deleteContactApi<T>(roomId: number): Promise<T> {
+  return apiFetch<T>(`/chat/rooms/${roomId}/leave/`, { method: "POST" });
+}
+
 export async function searchMessages<T>(roomId: number, q: string): Promise<T> {
   const res = await fetch(
     `${API_BASE}/chat/rooms/${roomId}/search/?q=${encodeURIComponent(q)}`,

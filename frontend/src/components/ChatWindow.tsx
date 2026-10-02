@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Maximize2, Menu, Minimize2, MonitorUp, MonitorStop, Phone, Users, Video, X } from "lucide-react";
+import { Hash, Loader2, Maximize2, Menu, Minimize2, MonitorUp, MonitorStop, MoreVertical, Phone, ShieldBan, Unlock, UserMinus, Users, Video, X } from "lucide-react";
 import { useChatStore } from "@/lib/store";
 import { useWebSocket } from "@/lib/useWebSocket";
-import { API_URL, mediaUrl } from "@/lib/api";
+import { API_URL, apiFetch, deleteContactApi, mediaUrl } from "@/lib/api";
+import { dayKey, formatDayLabel } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   leaveScreenShare,
@@ -24,7 +25,7 @@ import { CallPanel } from "./CallPanel";
 
 export function ChatWindow() {
   const { activeRoom, messages, setSidebarOpen } = useChatStore();
-  const { sendMessage, startTyping, editMessage, deleteMessage, toggleReaction, sendAiRequest, togglePin, sendRead } = useWebSocket(activeRoom?.name ?? null, activeRoom?.id ?? null);
+  const { sendMessage, startTyping, editMessage, deleteMessage, toggleReaction, sendAiRequest, togglePin, sendRead, forwardMessage } = useWebSocket(activeRoom?.name ?? null, activeRoom?.id ?? null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const resetRoomUnread = useChatStore((s) => s.resetRoomUnread);
   const call = useChatStore((s) => s.call);
@@ -32,6 +33,87 @@ export function ChatWindow() {
   const setCallLocalStream = useChatStore((s) => s.setCallLocalStream);
   const setCallRemoteStream = useChatStore((s) => s.setCallRemoteStream);
   const [replyTarget, setReplyTarget] = useState<{ id: number; username: string; text: string } | null>(null);
+  const [forwardTarget, setForwardTarget] = useState<{
+    id: number;
+    username: string;
+    text: string;
+  } | null>(null);
+  const rooms = useChatStore((s) => s.rooms);
+  // Пересылка из личного чата запрещена, поэтому и кнопку не показываем.
+  const canForwardFromRoom = activeRoom?.room_type !== "direct";
+  const forwardTargets = rooms.filter((r) => r.room_type !== "direct" && r.id !== activeRoom?.id);
+
+  // Блокировка и удаление доступны только в личном чате с другим человеком.
+  const contactUsername =
+    activeRoom?.room_type === "direct" && activeRoom.peer_username
+      ? activeRoom.peer_username
+      : null;
+  const [peerBlocked, setPeerBlocked] = useState(false);
+  const [contactBusy, setContactBusy] = useState(false);
+  const { setActiveRoom, setRooms } = useChatStore();
+
+  useEffect(() => {
+    if (!activeRoom || !contactUsername) {
+      setPeerBlocked(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${API_URL}/chat/rooms/${activeRoom.id}/bans/`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: Array<{ username: string; is_active?: boolean }>) => {
+        if (!cancelled) {
+          setPeerBlocked(
+            Array.isArray(list) &&
+              list.some((b) => b.username === contactUsername && b.is_active !== false)
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRoom?.id, contactUsername, peerBlocked]);
+
+  const handleToggleBlock = async () => {
+    if (!activeRoom || !contactUsername) return;
+    setContactBusy(true);
+    try {
+      if (peerBlocked) {
+        const bans = await apiFetch<Array<{ username: string; user_id: number }>>(
+          `/chat/rooms/${activeRoom.id}/bans/`
+        );
+        const found = bans.find((b) => b.username === contactUsername);
+        if (found) await apiFetch(`/chat/rooms/${activeRoom.id}/bans/${found.user_id}/`, { method: "DELETE" });
+        setPeerBlocked(false);
+      } else {
+        await apiFetch(`/chat/rooms/${activeRoom.id}/bans/`, {
+          method: "POST",
+          body: JSON.stringify({ username: contactUsername }),
+        });
+        setPeerBlocked(true);
+      }
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Не удалось изменить блокировку");
+    } finally {
+      setContactBusy(false);
+    }
+  };
+
+  const handleDeleteContact = async () => {
+    if (!activeRoom || !contactUsername) return;
+    if (!window.confirm(`Удалить контакт ${contactUsername}? Чат исчезнет из вашего списка.`)) return;
+    setContactBusy(true);
+    try {
+      await deleteContactApi(activeRoom.id);
+      const next = rooms.find((r) => r.id !== activeRoom.id);
+      setRooms(rooms.filter((r) => r.id !== activeRoom.id));
+      setActiveRoom(next ?? null);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Не удалось удалить контакт");
+    } finally {
+      setContactBusy(false);
+    }
+  };
   const [editingTarget, setEditingTarget] = useState<{ id: number; text: string } | null>(null);
   const typingUsers = useChatStore((s) => s.typingUsers);
   const aiTyping = useChatStore((s) => s.aiTyping);
@@ -310,6 +392,16 @@ export function ChatWindow() {
           showCallButtons={!!directPeer && !call}
           onCallAudio={() => void handleStartCall("audio")}
           onCallVideo={() => void handleStartCall("video")}
+          contactMenu={
+            contactUsername
+              ? {
+                  blocked: peerBlocked,
+                  busy: contactBusy,
+                  onToggleBlock: () => void handleToggleBlock(),
+                  onDelete: () => void handleDeleteContact(),
+                }
+              : undefined
+          }
         />
 
         {connectionState !== "online" && (
@@ -403,8 +495,20 @@ export function ChatWindow() {
         ref={scrollRef}
         className="flex-1 space-y-1 overflow-y-auto scrollbar-thin px-4 py-4 md:px-6"
       >
-        {messages.map((msg) => (
-          <div key={msg.id} ref={(el) => { if (el) messageRefs.current.set(msg.id, el); }}>
+        {messages.map((msg, index) => {
+          const prev = index > 0 ? messages[index - 1] : null;
+          const showDateDivider =
+            !prev || dayKey(prev.created_at) !== dayKey(msg.created_at);
+          return (
+            <div key={msg.id}>
+              {showDateDivider && (
+                <div className="sticky top-0 z-10 flex justify-center py-2">
+                  <span className="rounded-full border border-[var(--border-color)] bg-[var(--bg-primary)]/90 px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] backdrop-blur">
+                    {formatDayLabel(msg.created_at)}
+                  </span>
+                </div>
+              )}
+              <div ref={(el) => { if (el) messageRefs.current.set(msg.id, el); }}>
             <MessageBubble
               message={msg}
               currentUser={useChatStore.getState().user?.username ?? ""}
@@ -416,9 +520,22 @@ export function ChatWindow() {
               onToggleReaction={(emoji) => toggleReaction(msg.id, emoji)}
               onTogglePin={() => togglePin(msg.id)}
               onDelete={canDelete(msg) ? () => deleteMessage(msg.id) : undefined}
+              canForward={canForwardFromRoom}
+              onForward={
+                canForwardFromRoom
+                  ? () =>
+                      setForwardTarget({
+                        id: msg.id,
+                        username: msg.username,
+                        text: msg.message,
+                      })
+                  : undefined
+              }
             />
           </div>
-        ))}
+              </div>
+            );
+          })}
       </div>
 
       <div className="px-4 pb-2 md:px-6">
@@ -451,6 +568,55 @@ export function ChatWindow() {
         onError={setChatError}
       />
         </div>
+
+        {forwardTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm rounded-2xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4 shadow-2xl">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold">Переслать сообщение</div>
+                  <div className="mt-0.5 truncate text-xs text-[var(--text-muted)]">
+                    {forwardTarget.username}: {forwardTarget.text || "вложение"}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setForwardTarget(null)}
+                  className="shrink-0 rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)]"
+                  aria-label="Закрыть"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {forwardTargets.length === 0 ? (
+                <p className="py-6 text-center text-sm text-[var(--text-muted)]">
+                  Нет других чатов и каналов для пересылки
+                </p>
+              ) : (
+                <div className="max-h-72 space-y-1 overflow-y-auto scrollbar-thin">
+                  {forwardTargets.map((room) => (
+                    <button
+                      key={room.id}
+                      onClick={() => {
+                        forwardMessage(forwardTarget.id, room.name);
+                        setForwardTarget(null);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-tertiary)]"
+                    >
+                      <Hash size={14} className="shrink-0 text-[var(--text-muted)]" />
+                      <span className="min-w-0 flex-1 truncate">{room.name}</span>
+                      {room.server_name && (
+                        <span className="shrink-0 text-xs text-[var(--text-muted)]">
+                          {room.server_name}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {membersOpen && (
           <div className="hidden lg:block">
@@ -486,6 +652,7 @@ export function ChatHeader({
   showCallButtons,
   onCallAudio,
   onCallVideo,
+  contactMenu,
 }: {
   roomName: string;
   roomType?: "group" | "channel" | "direct";
@@ -501,8 +668,15 @@ export function ChatHeader({
   showCallButtons?: boolean;
   onCallAudio?: () => void;
   onCallVideo?: () => void;
+  contactMenu?: {
+    blocked: boolean;
+    onToggleBlock: () => void;
+    onDelete: () => void;
+    busy?: boolean;
+  };
 }) {
   const onlineUsers = useChatStore((s) => s.onlineUsers);
+  const [contactMenuOpen, setContactMenuOpen] = useState(false);
   const typeLabel =
     roomType === "direct"
       ? "Личный чат"
@@ -589,6 +763,54 @@ export function ChatHeader({
         >
           🔍
         </button>
+        {contactMenu && (
+          <div className="relative">
+            <button
+              onClick={() => setContactMenuOpen((v) => !v)}
+              className="rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]"
+              title="Действия с контактом"
+              aria-label="Действия с контактом"
+            >
+              <MoreVertical size={18} />
+            </button>
+            {contactMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setContactMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-full z-40 mt-1 w-56 overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] py-1 shadow-xl">
+                  <button
+                    onClick={() => {
+                      setContactMenuOpen(false);
+                      contactMenu.onToggleBlock();
+                    }}
+                    disabled={contactMenu.busy}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-tertiary)] disabled:opacity-60"
+                  >
+                    {contactMenu.blocked ? (
+                      <Unlock size={15} className="text-emerald-500" />
+                    ) : (
+                      <ShieldBan size={15} className="text-amber-500" />
+                    )}
+                    {contactMenu.blocked ? "Разблокировать" : "Заблокировать контакт"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setContactMenuOpen(false);
+                      contactMenu.onDelete();
+                    }}
+                    disabled={contactMenu.busy}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-500 transition-colors hover:bg-red-50 disabled:opacity-60 dark:hover:bg-red-950/30"
+                  >
+                    <UserMinus size={15} />
+                    Удалить контакт
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

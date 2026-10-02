@@ -171,7 +171,9 @@ def room_messages_view(request: Request, room_id: int) -> Response:
     messages = (
         Message.objects
         .filter(room=room)
-        .select_related("user", "reply_to", "reply_to__user")
+        .select_related(
+            "user", "reply_to", "reply_to__user", "forwarded_from", "forwarded_from__user"
+        )
         .order_by("-created_at")[:100]
     )
     messages = list(reversed(messages))
@@ -311,7 +313,9 @@ def room_search_view(request: Request, room_id: int) -> Response:
     messages = (
         Message.objects
         .filter(room=room, text__icontains=query)
-        .select_related("user", "reply_to", "reply_to__user")
+        .select_related(
+            "user", "reply_to", "reply_to__user", "forwarded_from", "forwarded_from__user"
+        )
         .order_by("-created_at")[:50]
     )
     messages = list(reversed(messages))

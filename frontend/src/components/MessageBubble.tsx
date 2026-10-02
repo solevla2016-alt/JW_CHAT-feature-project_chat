@@ -2,13 +2,65 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCheck, CornerUpLeft, Download, FileIcon, Loader2, Pencil, Pin, SmilePlus, Trash2, Volume2 } from "lucide-react";
+import { CheckCheck, CornerUpLeft, Download, ExternalLink, FileIcon, Forward, Loader2, Pencil, Pin, SmilePlus, Trash2, Volume2, X } from "lucide-react";
 import type { Message, ReactionItem } from "@/lib/types";
 import { cn, formatTime } from "@/lib/utils";
 import { mediaUrl, API_URL } from "@/lib/api";
 import { useChatStore } from "@/lib/store";
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+
+const URL_RE = /(https?:\/\/[^\s<>"']+)/gi;
+
+/** Renders message text with clickable links and a compact domain preview. */
+function MessageText({ text }: { text: string }) {
+  const parts = text.split(URL_RE);
+  if (parts.length === 1) {
+    return <div className="whitespace-pre-wrap break-words">{text}</div>;
+  }
+
+  return (
+    <div className="whitespace-pre-wrap break-words">
+      {parts.map((part, i) => {
+        if (!URL_RE.test(part) || !/^https?:\/\//i.test(part)) {
+          URL_RE.lastIndex = 0;
+          return <span key={i}>{part}</span>;
+        }
+        URL_RE.lastIndex = 0;
+        let host = part;
+        try {
+          host = new URL(part).hostname.replace(/^www\./, "");
+        } catch {
+          host = part;
+        }
+        return (
+          <span key={i} className="my-0.5 flex flex-col gap-1">
+            <a
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "inline-flex w-fit max-w-full items-center gap-1 rounded px-1 py-0.5 underline underline-offset-2",
+                "break-all transition-opacity hover:opacity-80"
+              )}
+            >
+              <ExternalLink size={12} className="shrink-0" />
+              <span className="break-all">{part}</span>
+            </a>
+            <span
+              className={cn(
+                "w-fit max-w-full truncate rounded-full px-2 py-0.5 text-[10px]",
+                "bg-black/10 text-current opacity-70 dark:bg-white/15"
+              )}
+            >
+              {host}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 export function MessageBubble({
   message,
@@ -19,6 +71,8 @@ export function MessageBubble({
   onToggleReaction,
   onTogglePin,
   onDelete,
+  onForward,
+  canForward,
 }: {
   message: Message;
   currentUser: string;
@@ -28,12 +82,15 @@ export function MessageBubble({
   onToggleReaction: (emoji: string) => void;
   onTogglePin: () => void;
   onDelete?: () => void;
+  onForward?: () => void;
+  canForward?: boolean;
 }) {
   const isOwn = message.username === currentUser;
   const isAi = message.is_ai ?? false;
   const isPinned = message.pinned ?? false;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
   const reactions = message.reactions ?? [];
 
   const { setMessageTranscription } = useChatStore();
@@ -116,6 +173,18 @@ export function MessageBubble({
                 : "rounded-tl-md bg-[var(--message-other)] text-[var(--message-other-text)]"
           )}
         >
+          {message.forwarded_from && (
+            <div className="mb-1.5 flex items-center gap-1.5 rounded-lg bg-black/10 px-2 py-1 text-xs dark:bg-black/25">
+              <Forward size={12} className="shrink-0" />
+              <div className="min-w-0">
+                <span className="font-medium">Переслано от {message.forwarded_from.username}</span>
+                {message.forwarded_from.text && (
+                  <span className="opacity-70"> · {message.forwarded_from.text}</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {message.reply_to && (
             <div className="mb-1.5 flex items-center gap-1.5 rounded-lg bg-black/10 px-2 py-1 text-xs dark:bg-black/20">
               <CornerUpLeft size={12} className="shrink-0" />
@@ -138,7 +207,13 @@ export function MessageBubble({
                 <button
                   onClick={handleTranscribe}
                   disabled={transcribing}
-                  className="mt-1.5 flex items-center gap-1 text-xs text-[var(--brand-primary)] hover:underline disabled:opacity-50"
+                  className={cn(
+                    "mt-1.5 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium",
+                    "transition-colors hover:underline disabled:opacity-60",
+                    isOwn
+                      ? "bg-white/20 text-white hover:bg-white/25"
+                      : "bg-[var(--brand-light)] text-[var(--brand-primary)] hover:bg-[var(--brand-light)]/70"
+                  )}
                 >
                   {transcribing ? <Loader2 size={12} className="animate-spin" /> : <Volume2 size={12} />}
                   {transcribing ? "Распознаю..." : "Транскрибировать"}
@@ -152,9 +227,18 @@ export function MessageBubble({
             </div>
           )}
           {message.attachment_type === "image" && message.attachment_url && (
-            <div className="mb-2">
-              <img src={mediaUrl(message.attachment_url)} alt={message.attachment_name} className="max-h-64 rounded-lg" />
-            </div>
+            <button
+              onClick={() => setImageOpen(true)}
+              className="mb-2 block w-full max-w-[260px] overflow-hidden rounded-lg"
+              aria-label="Открыть изображение"
+            >
+              <img
+                src={mediaUrl(message.attachment_url)}
+                alt={message.attachment_name}
+                loading="lazy"
+                className="max-h-56 w-full object-cover transition-transform hover:scale-[1.02]"
+              />
+            </button>
           )}
           {message.attachment_type === "file" && message.attachment_url && (
             <a
@@ -171,7 +255,7 @@ export function MessageBubble({
           {message.is_ai && message.message ? (
             <AiText text={message.message} />
           ) : (
-            message.message && <div className="whitespace-pre-wrap break-words">{message.message}</div>
+            message.message && <MessageText text={message.message} />
           )}
 
           <div className="mt-1 flex items-center justify-end gap-1 text-[10px] opacity-60">
@@ -257,6 +341,16 @@ export function MessageBubble({
           >
             <CornerUpLeft size={14} />
           </button>
+          {canForward && onForward && (
+            <button
+              onClick={onForward}
+              className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--brand-primary)]"
+              title="Переслать в другой чат"
+              aria-label="Переслать"
+            >
+              <Forward size={14} />
+            </button>
+          )}
           {isOwn && (
             <button
               onClick={onEdit}
@@ -290,6 +384,29 @@ export function MessageBubble({
           )}
         </div>
       </div>
+
+      {imageOpen && message.attachment_url && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setImageOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            onClick={() => setImageOpen(false)}
+            className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
+            aria-label="Закрыть"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={mediaUrl(message.attachment_url)}
+            alt={message.attachment_name}
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-full max-w-full rounded-lg object-contain"
+          />
+        </div>
+      )}
     </motion.div>
   );
 }

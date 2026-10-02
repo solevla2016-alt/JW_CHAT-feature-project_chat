@@ -1143,3 +1143,107 @@ class TestAiAnswerQueue:
         assert states == [True, False]
         assert queue.pending == 0
 
+
+
+@pytest.mark.django_db(transaction=True)
+class TestForwarding:
+    """Forwarding keeps the original author and is blocked for direct chats."""
+
+    async def test_forward_copies_message_and_keeps_author(
+        self, group_room, other_room, member, owner_message, ws_connect
+    ):
+        client, ok = await ws_connect(member, group_room.name)
+        assert ok
+        await _drain_until(client, "history")
+        target_client, target_ok = await ws_connect(member, other_room.name)
+        assert target_ok
+        await _drain_until(target_client, "history")
+
+        await client.send_json_to(
+            {"action": "forward", "message_id": owner_message.id, "room": other_room.name}
+        )
+        payload = await _drain_until(target_client, "message", timeout=4)
+
+        copy = await sync_to_async(Message.objects.get)(id=payload["id"])
+        assert copy.forwarded_from_id == owner_message.id
+        # the sender is the forwarder, but the original author stays visible
+        assert copy.user_id == member.id
+        original_author = await sync_to_async(
+            lambda: owner_message.user.username
+        )()
+        assert payload["forwarded_from"]["username"] == original_author
+
+        await client.disconnect()
+        await target_client.disconnect()
+
+    async def test_forward_from_direct_chat_is_rejected(
+        self, member, stranger, dm_room_factory, ws_connect
+    ):
+        dm = await sync_to_async(dm_room_factory)(member, stranger)
+        target = await sync_to_async(ChatRoom.objects.create)(
+            name="forward-target", room_type="group", owner=member
+        )
+        await sync_to_async(target.members.add)(member)
+
+        client, ok = await ws_connect(member, dm.name)
+        assert ok
+        await _drain_until(client, "history")
+
+        original = await sync_to_async(Message.objects.create)(
+            room=dm, user=stranger, text="private stuff"
+        )
+        await client.send_json_to(
+            {"action": "forward", "message_id": original.id, "room": target.name}
+        )
+        error = await _drain_until(client, "error", timeout=4)
+        assert error["message"]
+
+        copies = await sync_to_async(Message.objects.filter(room=target).count)()
+        assert copies == 0
+        await client.disconnect()
+
+    async def test_forward_into_direct_chat_is_rejected(
+        self, group_room, member, stranger, owner_message, dm_room_factory, ws_connect
+    ):
+        dm = await sync_to_async(dm_room_factory)(member, stranger)
+        client, ok = await ws_connect(member, group_room.name)
+        assert ok
+        await _drain_until(client, "history")
+
+        await client.send_json_to(
+            {"action": "forward", "message_id": owner_message.id, "room": dm.name}
+        )
+        error = await _drain_until(client, "error", timeout=4)
+        assert error["message"]
+
+        copies = await sync_to_async(Message.objects.filter(room=dm).count)()
+        assert copies == 0
+        await client.disconnect()
+
+    async def test_forward_rejects_same_room(
+        self, group_room, member, owner_message, ws_connect
+    ):
+        client, ok = await ws_connect(member, group_room.name)
+        assert ok
+        await _drain_until(client, "history")
+
+        await client.send_json_to(
+            {"action": "forward", "message_id": owner_message.id, "room": group_room.name}
+        )
+        error = await _drain_until(client, "error", timeout=4)
+        assert error["message"]
+        await client.disconnect()
+
+    async def test_forward_rejects_unknown_room(
+        self, group_room, member, owner_message, ws_connect
+    ):
+        client, ok = await ws_connect(member, group_room.name)
+        assert ok
+        await _drain_until(client, "history")
+
+        await client.send_json_to(
+            {"action": "forward", "message_id": owner_message.id, "room": "nope"}
+        )
+        error = await _drain_until(client, "error", timeout=4)
+        assert error["message"]
+        await client.disconnect()

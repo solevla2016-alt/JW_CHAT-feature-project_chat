@@ -25,11 +25,21 @@ class MessageSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
     avatar = serializers.SerializerMethodField()
     reply_to = serializers.SerializerMethodField()
+    forwarded_from = serializers.SerializerMethodField()
     reactions = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ("id", "username", "avatar", "text", "reply_to", "is_edited", "created_at", "updated_at", "reactions", "attachment_type", "attachment_url", "attachment_name", "duration", "pinned", "transcription")
+        fields = ("id", "username", "avatar", "text", "reply_to", "forwarded_from", "is_edited", "created_at", "updated_at", "reactions", "attachment_type", "attachment_url", "attachment_name", "duration", "pinned", "transcription")
+
+    def get_forwarded_from(self, obj: Message) -> dict | None:
+        if not obj.forwarded_from:
+            return None
+        return {
+            "id": obj.forwarded_from.id,
+            "username": obj.forwarded_from.user.username,
+            "text": obj.forwarded_from.text[:100],
+        }
 
     def get_avatar(self, obj: Message) -> str | None:
         if obj.user.avatar:

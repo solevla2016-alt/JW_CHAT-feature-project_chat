@@ -32,6 +32,36 @@ export function getInitials(username: string): string {
   return username.slice(0, 2).toUpperCase();
 }
 
+/** Stable YYYY-MM-DD key used to decide where date separators go. */
+export function dayKey(isoString: string): string {
+  const d = new Date(isoString);
+  const month = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+/** Human label for a message date divider. */
+export function formatDayLabel(isoString: string): string {
+  const date = new Date(isoString);
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((startOfToday.getTime() - startOfDate.getTime()) / 86400000);
+
+  if (diffDays === 0) return "Сегодня";
+  if (diffDays === 1) return "Вчера";
+  if (diffDays < 7) {
+    const dayNames = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
+    return dayNames[date.getDay()];
+  }
+  const monthNames = [
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+  ];
+  const base = `${date.getDate()} ${monthNames[date.getMonth()]}`;
+  return date.getFullYear() === today.getFullYear() ? base : `${base} ${date.getFullYear()}`;
+}
+
 export function escapeHtml(text: string): string {
   const div = document.createElement("div");
   div.textContent = text;

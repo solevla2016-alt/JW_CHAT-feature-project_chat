@@ -182,10 +182,14 @@ GIGACHAT_VERIFY_SSL = os.getenv("GIGACHAT_VERIFY_SSL", "False").strip().lower() 
 AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "30"))
 AI_CONTEXT_MESSAGES = int(os.getenv("AI_CONTEXT_MESSAGES", "20"))
 
-# --- Email: восстановление пароля через Resend (транзакционные письма) ---
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
-RESEND_FROM_NAME = os.getenv("RESEND_FROM_NAME", "JW CHAT")
+# --- Email: восстановление пароля через SMTP Яндекса ---
+YANDEX_MAIL_USERNAME = os.getenv("YANDEX_MAIL_USERNAME", "")
+YANDEX_MAIL_PASSWORD = os.getenv("YANDEX_MAIL_PASSWORD", "")
+YANDEX_MAIL_FROM = os.getenv("YANDEX_MAIL_FROM", "")
+YANDEX_MAIL_FROM_NAME = os.getenv("YANDEX_MAIL_FROM_NAME", "JOIN WORK!")
+YANDEX_SMTP_HOST = os.getenv("YANDEX_SMTP_HOST", "smtp.yandex.ru")
+YANDEX_SMTP_PORT = int(os.getenv("YANDEX_SMTP_PORT", "465"))
+DEFAULT_FROM_EMAIL = os.getenv("YANDEX_MAIL_FROM", "no-reply@localhost")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 
 REST_FRAMEWORK = {

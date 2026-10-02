@@ -363,6 +363,13 @@ export function useWebSocket(roomName: string | null, roomId: number | null = nu
     sendPayload(payload);
   }, [sendPayload]);
 
+  const forwardMessage = useCallback(
+    (messageId: number, targetRoom: string) => {
+      sendPayload({ action: "forward", message_id: messageId, room: targetRoom });
+    },
+    [sendPayload]
+  );
+
   const sendTyping = useCallback((isTyping: boolean) => {
     sendPayload({ action: "typing", is_typing: isTyping });
   }, [sendPayload]);
@@ -403,5 +410,15 @@ export function useWebSocket(roomName: string | null, roomId: number | null = nu
     }, 3000);
   }, [sendTyping]);
 
-  return { sendMessage, startTyping, editMessage, deleteMessage, toggleReaction, sendAiRequest, togglePin, sendRead };
+  return {
+    sendMessage,
+    startTyping,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
+    sendAiRequest,
+    togglePin,
+    sendRead,
+    forwardMessage,
+  };
 }

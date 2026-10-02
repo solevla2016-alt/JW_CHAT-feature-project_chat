@@ -52,6 +52,7 @@ export function ChatInput({
   onError: (message: string) => void;
 }) {
   const [value, setValue] = useState("");
+  const draftRef = useRef("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -81,12 +82,21 @@ export function ChatInput({
 
   useEffect(() => {
     if (editingTarget && textareaRef.current) {
+      // keep whatever was typed before editing so it can be restored
+      draftRef.current = value;
       setValue(editingTarget.text);
       textareaRef.current.focus();
     } else if (!editingTarget) {
-      setValue("");
+      setValue(draftRef.current);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingTarget]);
+
+  // Replying used to leave the composer unfocused and silent, so the
+  // button looked like it did nothing: nothing was typed into the input.
+  useEffect(() => {
+    if (replyTarget) textareaRef.current?.focus();
+  }, [replyTarget?.id]);
 
   useEffect(() => {
     const el = textareaRef.current;

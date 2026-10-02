@@ -118,6 +118,31 @@ def group_room(owner, member, moderator):
 
 
 @pytest.fixture()
+def other_room(owner, member):
+    """A second group room that can receive forwarded messages."""
+    room = ChatRoom.objects.create(name="other-room", owner=owner, room_type="group")
+    room.members.add(owner, member)
+    return room
+
+
+@pytest.fixture()
+def dm_room_factory(db):
+    """Creates a direct room between two users, as the app would."""
+
+    def _make(a, b):
+        low, high = sorted((a.id, b.id))
+        room = ChatRoom.objects.create(
+            name=f"dm-{low}-{high}",
+            owner=a,
+            room_type="direct",
+        )
+        room.members.add(a, b)
+        return room
+
+    return _make
+
+
+@pytest.fixture()
 def member(db):
     return get_user_model().objects.create_user(username="member", password="pass12345")
 
