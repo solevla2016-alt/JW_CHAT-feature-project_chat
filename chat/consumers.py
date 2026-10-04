@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import time
 from collections import defaultdict
 from typing import Any
 
@@ -87,7 +88,38 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def screen_key(self) -> str:
         return f"screen:chat_{self.room.id}"
 
+    def _origin_allowed(self) -> bool:
+        """Reject cross-site WebSocket handshakes.
+
+        Session cookies use SameSite=None so the handshake can carry them,
+        which means the browser will also attach them to a WebSocket opened
+        by a third-party page. The Origin header is the only remaining
+        defence against cross-site WebSocket hijacking.
+        """
+        origin = None
+        for name, value in self.scope.get("headers", []) or []:
+            if name.lower() == b"origin":
+                origin = value
+                break
+        if not origin:
+            # non-browser clients (tests, CLI) do not send Origin
+            return bool(getattr(settings, "DEBUG", False))
+        allowed = {o.strip().rstrip("/") for o in settings.CORS_ALLOWED_ORIGINS}
+        allowed |= {h.strip() for h in settings.ALLOWED_HOSTS if h.strip()}
+        origin_value = origin.decode() if isinstance(origin, bytes) else str(origin)
+        normalized = origin_value.strip().rstrip("/")
+        if normalized in allowed:
+            return True
+        # also accept hosts listed without the scheme
+        bare = origin_value.split("://", 1)[-1].split("/", 1)[0]
+        return bare in allowed
+
     async def connect(self) -> None:
+        if not self._origin_allowed():
+            print("[WS] close: origin not allowed", flush=True)
+            await self.close()
+            return
+
         user = self.scope["user"]
         if user.is_anonymous:
             print("[WS] close: anonymous", flush=True)
@@ -234,6 +266,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         action = data.get("action", "message")
+
+        # Rate limit so one connection cannot flood a room.
+        now = time.monotonic()
+        window = 10.0
+        budget = getattr(settings, "WS_MESSAGE_BURST", 25)
+        self._rate_window_start = getattr(self, "_rate_window_start", now)
+        self._rate_count = getattr(self, "_rate_count", 0) + 1
+        if now - self._rate_window_start > window:
+            self._rate_window_start = now
+            self._rate_count = 1
+        if self._rate_count > budget:
+            await self._send_error("Слишком много запросов, подождите пару секунд")
+            return
 
         redis = await self._get_redis()
         await redis.expire(f"presence:chan:{self.channel_name}", 300)

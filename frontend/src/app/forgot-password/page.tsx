@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ensureCsrfToken } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -16,6 +16,7 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    await ensureCsrfToken();
     try {
       await apiFetch<{ ok: boolean }>("/auth/password-reset/request/", {
         method: "POST",

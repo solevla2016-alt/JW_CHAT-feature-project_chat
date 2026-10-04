@@ -60,6 +60,9 @@ python_files = ["tests.py", "test_*.py"]
 asyncio_mode = "auto"
 testpaths = ["chat", "users"]
 addopts = "--cov --cov-report=term-missing --cov-config=pyproject.toml"
+markers = [
+    "no_throttle: keep DRF rate limiting active for this test",
+]
 
 [tool.coverage.run]
 source = ["chat", "users"]

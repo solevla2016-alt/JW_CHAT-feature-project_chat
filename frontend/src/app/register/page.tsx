@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, Moon, Sun } from "lucide-react";
 import { motion } from "framer-motion";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ensureCsrfToken } from "@/lib/api";
 import { useChatStore } from "@/lib/store";
 import { useTheme } from "@/lib/useTheme";
 
@@ -21,14 +21,23 @@ export default function RegisterPage() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    await ensureCsrfToken();
 
     if (password !== password2) {
       setError("Пароли не совпадают");
+      setLoading(false);
+      return;
+    }
+
+    if (!acceptTerms || !acceptPrivacy) {
+      setError("Примите правила использования и согласие на обработку персональных данных");
       setLoading(false);
       return;
     }
@@ -44,6 +53,8 @@ export default function RegisterPage() {
             password,
             password2,
             birth_date: birthDate || undefined,
+            accept_terms: acceptTerms,
+            accept_privacy: acceptPrivacy,
           }),
         }
       );
@@ -155,13 +166,49 @@ export default function RegisterPage() {
             </button>
           </div>
 
+          <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--text-secondary)]">
+            <input
+              type="checkbox"
+              checked={acceptTerms}
+              onChange={(e) => setAcceptTerms(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--brand-primary)]"
+            />
+            <span>
+              Принимаю{" "}
+              <Link href="/terms" target="_blank" className="text-[var(--brand-primary)] hover:underline">
+                правила использования
+              </Link>{" "}
+              Мессенджера
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--text-secondary)]">
+            <input
+              type="checkbox"
+              checked={acceptPrivacy}
+              onChange={(e) => setAcceptPrivacy(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--brand-primary)]"
+            />
+            <span>
+              Даю согласие на обработку{" "}
+              <Link href="/privacy" target="_blank" className="text-[var(--brand-primary)] hover:underline">
+                персональных данных
+              </Link>{" "}
+              (имя, email, аватар, дата рождения, содержимое сообщений и звонков)
+            </span>
+          </label>
+
           {error && (
             <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
               {error}
             </div>
           )}
 
-          <button type="submit" className="btn-primary" disabled={loading}>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={loading || !acceptTerms || !acceptPrivacy}
+            title={!acceptTerms || !acceptPrivacy ? "Примите правила и согласие на обработку данных" : undefined}
+          >
             {loading ? <Loader2 className="mx-auto animate-spin" size={20} /> : "Создать аккаунт"}
           </button>
         </form>

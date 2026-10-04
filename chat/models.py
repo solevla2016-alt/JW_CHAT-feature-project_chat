@@ -257,3 +257,35 @@ class Reaction(models.Model):
     def __str__(self) -> str:
         return f"{self.user.username}: {self.emoji} on {self.message_id}"
 
+
+class BugReport(models.Model):
+    """A problem reported by a user from inside the app."""
+
+    class Status(models.TextChoices):
+        NEW = "new", "Новое"
+        IN_PROGRESS = "in_progress", "В работе"
+        RESOLVED = "resolved", "Решено"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="bug_reports",
+    )
+    text = models.TextField()
+    page_url = models.CharField(max_length=500, blank=True, default="")
+    user_agent = models.CharField(max_length=300, blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.NEW,
+    )
+    admin_note = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.user.username}: {self.text[:40]}"
+

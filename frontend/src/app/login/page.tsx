@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ensureCsrfToken } from "@/lib/api";
 import { useChatStore } from "@/lib/store";
 import { useTheme } from "@/lib/useTheme";
 import { Moon, Sun } from "lucide-react";
@@ -23,6 +23,7 @@ export default function LOGINPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    await ensureCsrfToken();
     try {
       const data = await apiFetch<{ id: number; username: string; email: string; avatar: string | null; status: string }>(
         "/auth/login/",

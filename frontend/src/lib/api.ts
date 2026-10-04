@@ -7,6 +7,35 @@ export const API_URL =
 export const WS_URL =
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:8000/ws/chat";
 
+function readCookie(name: string): string {
+  if (typeof document === "undefined") return "";
+  const match = document.cookie.match(new RegExp(`(^|;\\s*)${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[2]) : "";
+}
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
+
+/**
+ * Django enforces CSRF on every session authenticated write, so the token
+ * from the csrftoken cookie has to be echoed back in X-CSRFToken.
+ */
+export function csrfHeaders(method: string): Record<string, string> {
+  if (SAFE_METHODS.has(method.toUpperCase())) return {};
+  const token = readCookie("csrftoken");
+  return token ? { "X-CSRFToken": token } : {};
+}
+
+/** Make sure a csrftoken cookie exists before the first write. */
+export async function ensureCsrfToken(): Promise<void> {
+  if (typeof document === "undefined") return;
+  if (readCookie("csrftoken")) return;
+  try {
+    await fetch(`${API_BASE}/auth/csrf/`, { credentials: "include" });
+  } catch {
+    // offline: the write will fail with a network error instead
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
@@ -15,6 +44,7 @@ export async function apiFetch<T>(
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...csrfHeaders(options.method ?? "GET"),
       ...(options.headers ?? {}),
     },
     ...options,

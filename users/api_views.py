@@ -5,16 +5,18 @@ from email.message import EmailMessage
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.core.exceptions import PermissionDenied
+from django.middleware.csrf import CsrfViewMiddleware, get_token
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
-from django.views.decorators.csrf import csrf_exempt
 from rest_framework import permissions, status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import (
     api_view,
     authentication_classes,
     permission_classes,
+    throttle_scope,
 )
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -26,20 +28,62 @@ logger = logging.getLogger(__name__)
 
 
 class CsrfExemptSessionAuthentication(SessionAuthentication):
-    def enforce_csrf(self, request):
-        return
+    """Kept for backwards compatible imports only.
+
+    Session authentication now enforces CSRF natively, so nothing should
+    reference this class. It fails closed: it never returns a user.
+    """
+
+    def authenticate(self, request):
+        return None
 
 
-@csrf_exempt
+def _require_csrf(request) -> None:
+    """Enforce CSRF on endpoints that have no session yet.
+
+    DRF marks its views csrf_exempt and SessionAuthentication only checks the
+    token once a session cookie exists, so login, registration and password
+    reset would otherwise stay unprotected. This runs the standard middleware
+    check by hand; the test client still skips it via its own flag.
+    """
+    check = CsrfViewMiddleware(lambda req: None)
+    check.process_request(request)
+    reason = check.process_view(request, None, (), {})
+    if reason is not None:
+        raise PermissionDenied(f"CSRF Failed: {reason}")
+
+
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def csrf_view(request: Request) -> Response:
+    """Issue a CSRF token so the client can send it back in X-CSRFToken."""
+    return Response({"csrf_token": get_token(request)})
+
+
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
+@throttle_scope("auth")
 @permission_classes([permissions.AllowAny])
 def register_view(request: Request) -> Response:
+    _require_csrf(request)
     username = request.data.get("username", "").strip()
     email = request.data.get("email", "").strip()
     password = request.data.get("password", "")
     password2 = request.data.get("password2", "")
     birth_date = request.data.get("birth_date") or None
+    terms_ok = bool(request.data.get("accept_terms"))
+    privacy_ok = bool(request.data.get("accept_privacy"))
+
+    if not terms_ok:
+        return Response(
+            {"error": "Примите правила использования"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not privacy_ok:
+        return Response(
+            {"error": "Дайте согласие на обработку персональных данных"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     if not username or not password:
         return Response({"error": "Username и пароль обязательны"}, status=status.HTTP_400_BAD_REQUEST)
@@ -53,7 +97,20 @@ def register_view(request: Request) -> Response:
     if User.objects.filter(username=username).exists():
         return Response({"error": "Пользователь уже существует"}, status=status.HTTP_400_BAD_REQUEST)
 
+    now = timezone.now()
     user = User.objects.create_user(username=username, email=email, password=password)
+    user.terms_accepted_at = now
+    user.terms_version = settings.TERMS_VERSION
+    user.privacy_accepted_at = now
+    user.privacy_version = settings.PRIVACY_VERSION
+    user.save(
+        update_fields=[
+            "terms_accepted_at",
+            "terms_version",
+            "privacy_accepted_at",
+            "privacy_version",
+        ]
+    )
     if birth_date:
         try:
             from datetime import date
@@ -65,11 +122,12 @@ def register_view(request: Request) -> Response:
     return Response(_user_data(user), status=status.HTTP_201_CREATED)
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
+@throttle_scope("auth")
 @permission_classes([permissions.AllowAny])
 def login_view(request: Request) -> Response:
+    _require_csrf(request)
     username = request.data.get("username", "").strip()
     password = request.data.get("password", "")
     user = authenticate(request, username=username, password=password)
@@ -86,9 +144,8 @@ def login_view(request: Request) -> Response:
     return Response(_user_data(user))
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def logout_view(request: Request) -> Response:
     logout(request)
     return Response({"success": True})
@@ -132,9 +189,8 @@ def users_list_view(request: Request) -> Response:
     return Response([ai_data, *result])
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def profile_update_view(request: Request) -> Response:
     user = request.user
     data = request.data
@@ -161,9 +217,8 @@ def profile_update_view(request: Request) -> Response:
     return Response(_user_data(user))
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def avatar_upload_view(request: Request) -> Response:
     user = request.user
     avatar = request.FILES.get("avatar")
@@ -178,6 +233,65 @@ def avatar_upload_view(request: Request) -> Response:
     user.avatar = avatar
     user.save()
     return Response(_user_data(user))
+
+
+@api_view(["GET"])
+@authentication_classes([SessionAuthentication])
+def consent_view(request: Request) -> Response:
+    """Report whether the signed in user accepted the current documents."""
+    user = request.user
+    terms_current = (
+        user.terms_accepted_at is not None
+        and user.terms_version == settings.TERMS_VERSION
+    )
+    privacy_current = (
+        user.privacy_accepted_at is not None
+        and user.privacy_version == settings.PRIVACY_VERSION
+    )
+    return Response(
+        {
+            "terms_accepted": terms_current,
+            "privacy_accepted": privacy_current,
+            "needs_consent": not (terms_current and privacy_current),
+            "terms_version": settings.TERMS_VERSION,
+            "privacy_version": settings.PRIVACY_VERSION,
+        }
+    )
+
+
+@api_view(["POST"])
+@authentication_classes([SessionAuthentication])
+def consent_accept_view(request: Request) -> Response:
+    """Store the acceptance with the document version and a timestamp."""
+    _require_csrf(request)
+    user = request.user
+
+    if not request.data.get("accept_terms"):
+        return Response(
+            {"error": "Примите правила использования"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not request.data.get("accept_privacy"):
+        return Response(
+            {"error": "Дайте согласие на обработку персональных данных"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    now = timezone.now()
+    user.terms_accepted_at = now
+    user.terms_version = settings.TERMS_VERSION
+    user.privacy_accepted_at = now
+    user.privacy_version = settings.PRIVACY_VERSION
+    user.save(
+        update_fields=[
+            "terms_accepted_at",
+            "terms_version",
+            "privacy_accepted_at",
+            "privacy_version",
+        ]
+    )
+    return Response({"ok": True, "terms_version": settings.TERMS_VERSION,
+                    "privacy_version": settings.PRIVACY_VERSION})
 
 
 def _authenticate_case_insensitive(request, login: str, password: str):
@@ -211,9 +325,9 @@ def _can_manage_roles(user: User) -> bool:
     return bool(user.is_staff or user.role == User.Role.ADMIN)
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@throttle_scope("auth")
+@authentication_classes([SessionAuthentication])
 def set_role_view(request: Request) -> Response:
     if not _can_manage_roles(request.user):
         return Response(
@@ -305,11 +419,12 @@ def _send_reset_email(to_email: str, reset_url: str, username: str) -> None:
         raise RuntimeError(str(exc)) from exc
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
+@throttle_scope("auth")
 @permission_classes([permissions.AllowAny])
 def password_reset_request_view(request: Request) -> Response:
+    _require_csrf(request)
     """Принимает email, создаёт одноразовый токен и шлёт письмо через Resend."""
     email = request.data.get("email", "").strip()
     if not email:
@@ -345,11 +460,12 @@ def password_reset_request_view(request: Request) -> Response:
     return Response({"ok": True, "token_id": token.pk})
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
+@throttle_scope("auth")
 @permission_classes([permissions.AllowAny])
 def password_reset_confirm_view(request: Request) -> Response:
+    _require_csrf(request)
     """Проверяет токен и устанавливает новый пароль."""
     uid = request.data.get("uid", "")
     token = request.data.get("token", "").strip()

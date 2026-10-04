@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   BookUser,
+  Bug,
   ChevronDown,
+  FileText,
   Home,
   Link2,
   LogOut,
@@ -13,6 +16,7 @@ import {
   Moon,
   Plus,
   Search,
+  ShieldCheck,
   Sun,
   Users,
   X,
@@ -24,6 +28,7 @@ import type { ChatRoom, Server, User } from "@/lib/types";
 import { cn, getInitials } from "@/lib/utils";
 import { CACHE_KEYS, readCache, writeCache } from "@/lib/cache";
 import { ServerRail, type RailKey } from "./ServerRail";
+import { BugReportDialog } from "./BugReportDialog";
 
 function directTitle(room: ChatRoom): string {
   if (room.room_type !== "direct") return room.name;
@@ -49,6 +54,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
     setSidebarOpen,
   } = useChatStore();
   const { dark: themeDark, toggle: toggleTheme } = useTheme();
+  const [bugReportOpen, setBugReportOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [activeId, setActiveId] = useState<RailKey>("home");
   const [showCreateRoom, setShowCreateRoom] = useState(false);
@@ -839,6 +845,29 @@ onClick={async () => {
 
                 <div className="my-2 h-px bg-[var(--border-color)]" />
                 <button
+                  onClick={() => setBugReportOpen(true)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  <Bug size={15} />
+                  Сообщить о проблеме
+                </button>
+                <Link
+                  href="/terms"
+                  target="_blank"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  <FileText size={15} />
+                  Правила использования
+                </Link>
+                <Link
+                  href="/privacy"
+                  target="_blank"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  <ShieldCheck size={15} />
+                  Обработка персональных данных
+                </Link>
+                <button
                   onClick={toggleTheme}
                   className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
                 >
@@ -857,6 +886,8 @@ onClick={async () => {
           )}
         </div>
       </div>
+
+      {bugReportOpen && <BugReportDialog onClose={() => setBugReportOpen(false)} />}
     </div>
   );
 }

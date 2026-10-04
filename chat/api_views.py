@@ -1,28 +1,29 @@
 import os
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db.models import Exists, F, OuterRef, Q
-from django.views.decorators.csrf import csrf_exempt
 from rest_framework import permissions, status
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import (
     api_view,
     authentication_classes,
     permission_classes,
+    throttle_scope,
 )
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from users.api_views import CsrfExemptSessionAuthentication
-
-from .models import ChatRoom, Message, RoomBan, Server
+from .models import BugReport, ChatRoom, Message, RoomBan, Server
 from .permissions import (
     ban_user,
     can_ban,
     can_delete_message,
     is_admin,
     is_banned,
+    is_moderator,
     unban_user,
 )
 from .serializers import (
@@ -126,9 +127,8 @@ def server_invite_view(request: Request, server_id: int) -> Response:
     return Response({"token": str(server.invite_token)})
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def server_join_view(request: Request, token: str) -> Response:
     try:
         server = Server.objects.get(invite_token=token)
@@ -139,9 +139,8 @@ def server_join_view(request: Request, token: str) -> Response:
     return Response(ServerSerializer(server).data)
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def server_create_view(request: Request) -> Response:
     serializer = ServerCreateSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():
@@ -150,9 +149,8 @@ def server_create_view(request: Request) -> Response:
     return Response(ServerSerializer(server).data, status=status.HTTP_201_CREATED)
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def room_create_view(request: Request) -> Response:
     serializer = ChatRoomCreateSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():
@@ -181,9 +179,8 @@ def room_messages_view(request: Request, room_id: int) -> Response:
     return Response(serializer.data)
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def room_join_view(request: Request, room_id: int) -> Response:
     try:
         room = ChatRoom.objects.get(id=room_id)
@@ -197,9 +194,8 @@ def room_join_view(request: Request, room_id: int) -> Response:
     return Response({"success": True})
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def room_leave_view(request: Request, room_id: int) -> Response:
     try:
         room = ChatRoom.objects.get(id=room_id)
@@ -213,9 +209,8 @@ def room_leave_view(request: Request, room_id: int) -> Response:
     return Response({"success": True})
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def room_add_member_view(request: Request, room_id: int) -> Response:
     try:
         room = ChatRoom.objects.get(id=room_id)
@@ -244,18 +239,130 @@ def room_add_member_view(request: Request, room_id: int) -> Response:
     return Response({"success": True})
 
 
-@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([SessionAuthentication])
+@throttle_scope("reports")
+def bug_report_create_view(request: Request) -> Response:
+    """Let a user report a problem without leaving the app."""
+    text = str(request.data.get("text", "")).strip()
+    if not text:
+        return Response(
+            {"error": "\u041e\u043f\u0438\u0448\u0438\u0442\u0435 \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0443"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if len(text) > 4000:
+        return Response(
+            {
+                "error": "\u0421\u043b\u0438\u0448\u043a\u043e \u0434\u043b\u0438\u043d\u043d\u043e\u0435 "
+                "\u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435, \u043c\u0430\u043a\u0441\u0438\u043c\u0443\u043c 4000 "
+                "\u0441\u0438\u043c\u0432\u043e\u043b\u043e\u0432"
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    report = BugReport.objects.create(
+        user=request.user,
+        text=text,
+        page_url=str(request.data.get("page_url", ""))[:500],
+        user_agent=str(request.data.get("user_agent", ""))[:300],
+    )
+
+    recipient = getattr(settings, "BUG_REPORT_EMAIL", "") or getattr(
+        settings, "YANDEX_MAIL_FROM", ""
+    )
+    if recipient:
+        from users.mail import send_email
+
+        body = (
+            "\u041d\u043e\u0432\u044b\u0439 \u043e\u0442\u0447\u0451\u0442 \u043e\u0431 \u043e\u0448\u0438\u0431\u043a\u0435\n\n"
+            f"\u0410\u0432\u0442\u043e\u0440: {report.user.username} (id {report.user.id})\n"
+            f"\u041a\u043e\u0433\u0434\u0430: {report.created_at.isoformat()}\n"
+            f"\u0421\u0442\u0440\u0430\u043d\u0438\u0446\u0430: {report.page_url}\n\n"
+            f"{report.text}\n"
+        )
+        try:
+            send_email(
+                recipient,
+                f"\u041e\u0448\u0438\u0431\u043a\u0430 \u0432 JOIN WORK: {report.user.username}",
+                None,
+                body,
+            )
+        except RuntimeError:
+            # the report is stored already; a missing mail must not fail the request
+            pass
+
+    return Response(
+        {"ok": True, "id": report.id, "status": report.status},
+        status=status.HTTP_201_CREATED,
+    )
+
+
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
+def bug_report_list_view(request: Request) -> Response:
+    """Moderators can read and triage the reports."""
+    if not (is_admin(request.user) or is_moderator(request.user)):
+        return Response(
+            {"error": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    reports = BugReport.objects.select_related("user")[:100]
+    return Response([
+        {
+            "id": r.id,
+            "username": r.user.username,
+            "text": r.text,
+            "page_url": r.page_url,
+            "status": r.status,
+            "admin_note": r.admin_note,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in reports
+    ])
+
+
+@api_view(["PATCH"])
+@authentication_classes([SessionAuthentication])
+def bug_report_update_view(request: Request, report_id: int) -> Response:
+    """Change status or leave a note; moderators only."""
+    if not (is_admin(request.user) or is_moderator(request.user)):
+        return Response(
+            {"error": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    try:
+        report = BugReport.objects.get(id=report_id)
+    except BugReport.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    status_value = str(request.data.get("status", "")).strip()
+    if status_value and status_value not in BugReport.Status.values:
+        return Response(
+            {
+                "error": "\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 "
+                "\u0441\u0442\u0430\u0442\u0443\u0441"
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if status_value:
+        report.status = status_value
+    note = request.data.get("admin_note")
+    if note is not None:
+        report.admin_note = str(note)[:2000]
+    report.save(update_fields=["status", "admin_note", "updated_at"])
+    return Response({"ok": True, "status": report.status})
+
+
+@api_view(["GET"])
+@authentication_classes([SessionAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def upload_limits_view(request: Request) -> Response:
     """Allowed attachment sizes so the client can show and enforce them."""
     return Response(upload_limits_payload())
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def room_upload_view(request: Request, room_id: int) -> Response:
     try:
@@ -323,9 +430,8 @@ def room_search_view(request: Request, room_id: int) -> Response:
     return Response(serializer.data)
 
 
-@csrf_exempt
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def room_transcribe_view(request: Request, room_id: int) -> Response:
     try:

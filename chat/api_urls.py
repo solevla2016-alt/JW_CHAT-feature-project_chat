@@ -1,6 +1,9 @@
 from django.urls import path
 
 from .api_views import (
+    bug_report_create_view,
+    bug_report_list_view,
+    bug_report_update_view,
     room_add_member_view,
     room_ban_view,
     room_create_view,
@@ -38,4 +41,7 @@ urlpatterns = [
     path("rooms/<int:room_id>/members/", room_add_member_view, name="api_room_add_member"),
     path("rooms/<int:room_id>/upload/", room_upload_view, name="api_room_upload"),
     path("rooms/<int:room_id>/transcribe/", room_transcribe_view, name="api_room_transcribe"),
+    path("bug-reports/", bug_report_create_view, name="api_bug_report_create"),
+    path("bug-reports/list/", bug_report_list_view, name="api_bug_report_list"),
+    path("bug-reports/<int:report_id>/", bug_report_update_view, name="api_bug_report_update"),
 ]

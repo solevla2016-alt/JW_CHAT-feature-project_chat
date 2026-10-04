@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { CheckCheck, CornerUpLeft, Download, ExternalLink, FileIcon, Forward, Loader2, Pencil, Pin, SmilePlus, Trash2, Volume2, X } from "lucide-react";
 import type { Message, ReactionItem } from "@/lib/types";
 import { cn, formatTime } from "@/lib/utils";
-import { mediaUrl, API_URL } from "@/lib/api";
+import { mediaUrl, API_URL, csrfHeaders } from "@/lib/api";
 import { useChatStore } from "@/lib/store";
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
@@ -105,7 +105,7 @@ export function MessageBubble({
         {
           method: "POST",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...csrfHeaders("POST") },
           body: JSON.stringify({ message_id: message.id }),
         }
       );

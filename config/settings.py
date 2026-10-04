@@ -190,7 +190,18 @@ YANDEX_MAIL_FROM_NAME = os.getenv("YANDEX_MAIL_FROM_NAME", "JOIN WORK!")
 YANDEX_SMTP_HOST = os.getenv("YANDEX_SMTP_HOST", "smtp.yandex.ru")
 YANDEX_SMTP_PORT = int(os.getenv("YANDEX_SMTP_PORT", "465"))
 DEFAULT_FROM_EMAIL = os.getenv("YANDEX_MAIL_FROM", "no-reply@localhost")
+# where bug reports from the app are delivered (falls back to the sender)
+BUG_REPORT_EMAIL = os.getenv("BUG_REPORT_EMAIL", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+
+# --- Rate limiting ---
+# Login, registration and password reset are anonymous endpoints, so they are
+# throttled per IP; everything else is limited per signed in user.
+WS_MESSAGE_BURST = int(os.getenv("WS_MESSAGE_BURST", "25"))
+
+# --- Legal documents: bump the version to ask users to accept again ---
+TERMS_VERSION = os.getenv("TERMS_VERSION", "1.0")
+PRIVACY_VERSION = os.getenv("PRIVACY_VERSION", "1.0")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -199,6 +210,18 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.getenv("THROTTLE_ANON", "60/min"),
+        "user": os.getenv("THROTTLE_USER", "600/min"),
+        # brute force protection for the credential endpoints
+        "auth": os.getenv("THROTTLE_AUTH", "10/hour"),
+        "reports": os.getenv("THROTTLE_REPORTS", "5/hour"),
+    },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
 }

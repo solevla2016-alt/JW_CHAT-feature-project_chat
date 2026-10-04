@@ -1247,3 +1247,65 @@ class TestForwarding:
         error = await _drain_until(client, "error", timeout=4)
         assert error["message"]
         await client.disconnect()
+
+
+@pytest.mark.django_db()
+class TestBugReports:
+    """Users can report problems; only moderators can read and triage them."""
+
+    def test_user_can_send_report(self, api_client, member):
+        from chat.models import BugReport
+
+        api_client.force_authenticate(user=member)
+        resp = api_client.post(
+            "/api/chat/bug-reports/",
+            {"text": "Кнопка ответа не работает", "page_url": "/chat"},
+            format="json",
+        )
+        assert resp.status_code == 201
+        assert BugReport.objects.filter(user=member).exists()
+
+    def test_empty_report_rejected(self, api_client, member):
+        api_client.force_authenticate(user=member)
+        resp = api_client.post("/api/chat/bug-reports/", {"text": "   "}, format="json")
+        assert resp.status_code == 400
+
+    def test_regular_user_cannot_list_reports(self, api_client, member):
+        api_client.force_authenticate(user=member)
+        resp = api_client.get("/api/chat/bug-reports/list/")
+        assert resp.status_code == 403
+
+    def test_moderator_can_list_and_change_status(self, api_client, admin, member):
+        from chat.models import BugReport
+
+        api_client.force_authenticate(user=member)
+        created = api_client.post(
+            "/api/chat/bug-reports/", {"text": "шум на сервере"}, format="json"
+        )
+        report_id = created.data["id"]
+
+        api_client.force_authenticate(user=admin)
+        listed = api_client.get("/api/chat/bug-reports/list/")
+        assert listed.status_code == 200
+        assert listed.data[0]["id"] == report_id
+
+        updated = api_client.patch(
+            f"/api/chat/bug-reports/{report_id}/",
+            {"status": "resolved"},
+            format="json",
+        )
+        assert updated.status_code == 200
+        assert BugReport.objects.get(id=report_id).status == BugReport.Status.RESOLVED
+
+    def test_invalid_status_rejected(self, api_client, admin, member):
+        api_client.force_authenticate(user=member)
+        created = api_client.post(
+            "/api/chat/bug-reports/", {"text": "что-то"}, format="json"
+        )
+        api_client.force_authenticate(user=admin)
+        resp = api_client.patch(
+            f"/api/chat/bug-reports/{created.data['id']}/",
+            {"status": "nonsense"},
+            format="json",
+        )
+        assert resp.status_code == 400

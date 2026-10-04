@@ -12,6 +12,27 @@ from chat.consumers import ChatConsumer
 from chat.models import ChatRoom, Message
 
 
+@pytest.fixture(autouse=True)
+def disable_throttling(request, monkeypatch):
+    """Keep rate limits out of the way of unrelated tests.
+
+    DRF captures THROTTLE_RATES on the class at import time, so tweaking the
+    settings has no effect once the app is loaded. The limiter is therefore
+    short-circuited here, and tests that assert on throttling opt out with
+    @pytest.mark.no_throttle.
+    """
+    if request.node.get_closest_marker("no_throttle"):
+        return None
+    from rest_framework.throttling import SimpleRateThrottle
+
+    monkeypatch.setattr(
+        SimpleRateThrottle,
+        "allow_request",
+        lambda self, request, view=None: True,
+    )
+    return None
+
+
 class FakeRedis:
     """Минимальный in-memory аналог того подмножества Redis, что использует консьюмер."""
 
@@ -175,6 +196,11 @@ def ws_application():
 async def connect_ws(user, room_name: str) -> tuple[WebsocketCommunicator, bool]:
     communicator = WebsocketCommunicator(ws_application(), f"/ws/chat/{room_name}/")
     communicator.scope["user"] = user
+    # a real browser always sends Origin on the WebSocket handshake
+    communicator.scope["headers"] = [
+        (b"host", b"testserver"),
+        (b"origin", b"https://testserver"),
+    ]
     connected, _ = await communicator.connect()
     return communicator, connected
 

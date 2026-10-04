@@ -30,13 +30,90 @@ class TestAuthApi:
     def test_register_creates_user(self, api_client):
         resp = api_client.post(
             REGISTER_URL,
-            {"username": "newbie", "password": "secret123", "password2": "secret123"},
+            {
+                "username": "newbie",
+                "password": "secret123",
+                "password2": "secret123",
+                "accept_terms": True,
+                "accept_privacy": True,
+            },
             format="json",
         )
         assert resp.status_code == 201
         assert resp.data["username"] == "newbie"
         assert resp.data["role"] == "member"
         assert User.objects.filter(username="newbie").exists()
+
+    def test_register_records_consent(self, api_client):
+        from django.conf import settings
+
+        resp = api_client.post(
+            REGISTER_URL,
+            {
+                "username": "consented",
+                "password": "secret123",
+                "password2": "secret123",
+                "accept_terms": True,
+                "accept_privacy": True,
+            },
+            format="json",
+        )
+        assert resp.status_code == 201
+        user = User.objects.get(username="consented")
+        assert user.terms_accepted_at is not None
+        assert user.privacy_accepted_at is not None
+        assert user.terms_version == settings.TERMS_VERSION
+        assert user.privacy_version == settings.PRIVACY_VERSION
+
+    def test_register_requires_terms_consent(self, api_client):
+        resp = api_client.post(
+            REGISTER_URL,
+            {
+                "username": "noterms",
+                "password": "secret123",
+                "password2": "secret123",
+                "accept_privacy": True,
+            },
+            format="json",
+        )
+        assert resp.status_code == 400
+        assert not User.objects.filter(username="noterms").exists()
+
+    def test_register_requires_privacy_consent(self, api_client):
+        resp = api_client.post(
+            REGISTER_URL,
+            {
+                "username": "noprivacy",
+                "password": "secret123",
+                "password2": "secret123",
+                "accept_terms": True,
+            },
+            format="json",
+        )
+        assert resp.status_code == 400
+        assert not User.objects.filter(username="noprivacy").exists()
+
+    def test_consent_view_reports_status(self, api_client, user):
+        user.terms_accepted_at = None
+        user.privacy_accepted_at = None
+        user.save(update_fields=["terms_accepted_at", "privacy_accepted_at"])
+        api_client.force_authenticate(user=user)
+        resp = api_client.get("/api/auth/consent/")
+        assert resp.status_code == 200
+        assert resp.data["terms_accepted"] is False
+        assert resp.data["needs_consent"] is True
+
+    def test_consent_view_accepts(self, api_client, user):
+        api_client.force_authenticate(user=user)
+        resp = api_client.post(
+            "/api/auth/consent/accept/",
+            {"accept_terms": True, "accept_privacy": True},
+            format="json",
+        )
+        assert resp.status_code == 200
+        user.refresh_from_db()
+        assert user.terms_accepted_at is not None
+        assert user.privacy_accepted_at is not None
 
     def test_register_requires_passwords(self, api_client):
         resp = api_client.post(
@@ -397,3 +474,78 @@ class TestPasswordReset:
             format="json",
         )
         assert resp.status_code == 400
+
+
+@pytest.mark.django_db()
+class TestAuthHardening:
+    """CSRF enforcement and brute force protection on credential endpoints."""
+
+    def test_csrf_endpoint_returns_token(self, api_client, settings):
+        settings.ALLOWED_HOSTS = [*settings.ALLOWED_HOSTS, "testserver"]
+        resp = api_client.get("/api/auth/csrf/")
+        assert resp.status_code == 200
+        assert resp.data["csrf_token"]
+
+    def test_csrf_check_rejects_request_without_token(self, client):
+        """A write without the CSRF cookie/header must be refused."""
+        from django.core.exceptions import PermissionDenied
+
+        from users.api_views import _require_csrf
+
+        resp = client.post(
+            "/api/auth/login/",
+            data='{"username": "someone", "password": "secret"}',
+            content_type="application/json",
+        )
+        request = resp.wsgi_request
+        request.COOKIES.pop("csrftoken", None)
+        request.META.pop("HTTP_X_CSRFTOKEN", None)
+        request._dont_enforce_csrf_checks = False
+        try:
+            _require_csrf(request)
+        except PermissionDenied:
+            return
+        raise AssertionError("CSRF check accepted a request without a token")
+
+    @pytest.mark.no_throttle()
+    def test_auth_endpoints_are_throttled(self, api_client, monkeypatch):
+        """Repeated credential attempts must start returning 429."""
+        from rest_framework.throttling import ScopedRateThrottle
+
+        monkeypatch.setattr(
+            ScopedRateThrottle,
+            "THROTTLE_RATES",
+            {**ScopedRateThrottle.THROTTLE_RATES, "auth": "3/hour"},
+        )
+        try:
+            for _ in range(3):
+                api_client.post(
+                    "/api/auth/login/", {"username": "x", "password": "y"}, format="json"
+                )
+            blocked = api_client.post(
+                "/api/auth/login/", {"username": "x", "password": "y"}, format="json"
+            )
+        finally:
+            from django.core.cache import cache
+
+            cache.clear()
+        assert blocked.status_code == 429
+
+    def test_auth_rate_is_strict_and_credential_endpoints_are_scoped(self):
+        """Guards the configuration itself, not just DRF's behaviour."""
+        from django.conf import settings
+        from rest_framework.throttling import ScopedRateThrottle
+
+        from users.api_views import (
+            login_view,
+            password_reset_request_view,
+            register_view,
+        )
+
+        rate = ScopedRateThrottle.THROTTLE_RATES["auth"]
+        assert rate == settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["auth"]
+        limit = int(rate.split("/")[0])
+        assert limit <= 20, "auth rate is too permissive for brute force protection"
+
+        for view in (register_view, login_view, password_reset_request_view):
+            assert view.cls.throttle_scope == "auth"

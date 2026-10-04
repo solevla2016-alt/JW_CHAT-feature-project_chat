@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
-import { apiFetch, joinServer } from "@/lib/api";
+import { apiFetch, ensureCsrfToken, joinServer } from "@/lib/api";
 import { useChatStore } from "@/lib/store";
 import type { ChatRoom, Server, User } from "@/lib/types";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatWindow } from "@/components/ChatWindow";
 import { ACTIVE_ROOM_KEY, persistActiveRoom } from "@/lib/activeRoom";
 import { CACHE_KEYS, readCache, writeCache } from "@/lib/cache";
+import { ConsentGate } from "@/components/ConsentGate";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -25,12 +26,21 @@ export default function ChatPage() {
     setSidebarOpen,
   } = useChatStore();
   const [loading, setLoading] = useState(true);
+  const [needsConsent, setNeedsConsent] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
+        await ensureCsrfToken();
         const me = await apiFetch<User>("/auth/me/");
         setUser(me);
+
+        try {
+          const consent = await apiFetch<{ needs_consent: boolean }>("/auth/consent/");
+          setNeedsConsent(Boolean(consent.needs_consent));
+        } catch {
+          // the endpoint is missing on an older backend: do not block the app
+        }
 
         const invite = new URLSearchParams(window.location.search).get("invite");
         if (invite) {
@@ -120,6 +130,8 @@ export default function ChatPage() {
       <main className="relative flex flex-1 flex-col min-w-0">
         <ChatWindow />
       </main>
+
+      <ConsentGate needsConsent={needsConsent} onAccepted={() => setNeedsConsent(false)} />
     </div>
   );
 }

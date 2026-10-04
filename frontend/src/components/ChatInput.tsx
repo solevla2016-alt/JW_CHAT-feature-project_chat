@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CornerUpLeft, Mic, Paperclip, Pencil, Plus, SendHorizonal, Smile, Square, Video, X } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { API_URL, csrfHeaders } from "@/lib/api";
 import {
   checkFileSize,
   DEFAULT_UPLOAD_LIMITS,
@@ -230,6 +230,7 @@ export function ChatInput({
         const res = await fetch(`${API_URL}/chat/rooms/${roomId}/upload/`, {
           method: "POST",
           credentials: "include",
+          headers: csrfHeaders("POST"),
           body: formData,
         });
         if (!res.ok) throw new Error("Ошибка загрузки");

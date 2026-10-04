@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ensureCsrfToken } from "@/lib/api";
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -23,6 +23,7 @@ function ResetPasswordForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    await ensureCsrfToken();
 
     if (!uid || !token) {
       setError("Ссылка недействительна");
